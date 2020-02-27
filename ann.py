@@ -9,12 +9,13 @@ from penalty_parameters import penalty_parameters
 from sample_r import *
 
 
-def ann(x, y, net, lamb, criterion):
+def ann(x, z, y, net, lamb, criterion):
     length = len(lamb)
     if length > 1:
         valid_list = np.zeros(length)
         train, valid = sample_index(629, y)
         y_train, y_valid = y[train], y[valid]
+        z_train, z_valid = z[train], z[valid]
         if type(x) is list:
             x_train, x_valid = [], []
             for i in range(len(x)):
@@ -23,18 +24,18 @@ def ann(x, y, net, lamb, criterion):
         else:
             x_train, x_valid = x[train], x[valid]
         for i in range(length):
-            net_cache = ann1(x_train, y_train, copy.deepcopy(net), lamb[i], criterion)
-            valid_list[i] = criterion(net_cache(x_valid), y_valid).tolist()
+            net_cache = ann1(x_train, z_train, y_train, copy.deepcopy(net), lamb[i], criterion)
+            valid_list[i] = criterion(net_cache(x_valid, z_valid), y_valid).tolist()
 
         print(valid_list)
         lamb = lamb[np.argmin(valid_list)]
     else:
         lamb = lamb[0]
 
-    return ann1(x, y, copy.deepcopy(net), lamb, criterion)
+    return ann1(x, z, y, copy.deepcopy(net), lamb, criterion)
 
     
-def ann1(x, y, net, lamb, criterion):
+def ann1(x, z, y, net, lamb, criterion):
     # optimizer = optim.Adam(net.parameters())
     optimizer = optim.Adadelta(net.parameters())
     # optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
@@ -43,7 +44,7 @@ def ann1(x, y, net, lamb, criterion):
 
     while k < 100:
         optimizer.zero_grad()
-        output = net(x)
+        output = net(x, z)
         mse, penalty = criterion(output, y), penalty_parameters(net)*lamb0
         loss = mse + penalty
         if epoch % 10 == 0:
@@ -59,7 +60,7 @@ def ann1(x, y, net, lamb, criterion):
         optimizer.step()
         epoch += 1
 
-    output = net_cache(x)
+    output = net_cache(x, z)
     mse, pen = criterion(output, y).tolist(), penalty_parameters(net_cache).tolist()*lamb0
     print(epoch-100*10-1, "mse:", mse, "pen:", pen, "loss:", loss_min)
     return net_cache

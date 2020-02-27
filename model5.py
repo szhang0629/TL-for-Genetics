@@ -15,9 +15,9 @@ class MyModelA(nn.Module):
 
 
 class MyModelB(nn.Module):
-    def __init__(self, device):
+    def __init__(self, z_dim, device):
         super(MyModelB, self).__init__()
-        self.fc1 = nn.Linear(20, 5).to(device)
+        self.fc1 = nn.Linear(20+z_dim, 5).to(device)
         self.fc2 = nn.Linear(5, 1).to(device)
 
     def forward(self, x):
@@ -32,8 +32,8 @@ class MyEnsemble(nn.Module):
         self.modelA = modelA
         self.modelB = modelB
 
-    def forward(self, x):
+    def forward(self, x, z):
         x1 = [self.modelA[i](x[i]) for i in range(len(x))]
-        x5 = torch.cat((x1[0], x1[1], x1[2], x1[3], x1[4]), 1)
+        x5 = torch.cat((x1[0], x1[1], x1[2], x1[3], x1[4], z), 1)
         x2 = self.modelB(x5)
         return x2

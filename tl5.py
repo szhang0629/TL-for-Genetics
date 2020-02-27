@@ -18,22 +18,25 @@ from sample_r import *
 
 def tl5(seed_index):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    g, x, y = data("CHRNA3", seed_index)
-    g = [g]
-    for name in ["CHRNA5", "CHRNA6", "CHRNB3", "CHRNB4"]:
-        g_ = pd.read_csv("../Data/" + name + "/g.csv", index_col=0)
-        g.append(torch.from_numpy(g_.values).float())
-    
-    xx = x[:, 0].numpy()
-    old = np.arange(len(xx))[xx.astype(bool)]
-    new = np.arange(len(xx))[(1 - xx).astype(bool)]
-    y_old, y_new = y[old], y[new]
-    g_old, g_new = [g_[old] for g_ in g], [g_[new] for g_ in g]
+   # g, x, y = data("CHRNA3", seed_index)
+   # g = [g]
+   # for name in ["CHRNA5", "CHRNA6", "CHRNB3", "CHRNB4"]:
+   #     g_ = pd.read_csv("../Data/" + name + "/g.csv", index_col=0)
+   #     g.append(torch.from_numpy(g_.values).float())
+   # 
+   # xx = x[:, 0].numpy()
+   # old = np.arange(len(xx))[xx.astype(bool)]
+   # x = x[:, 1:2]
+   # new = np.arange(len(xx))[(1 - xx).astype(bool)]
+   # y_old, y_new, x_old, x_new = y[old], y[new], x[old], x[new]
+   # g_old, g_new = [g_[old] for g_ in g], [g_[new] for g_ in g]
 
-    #g_new, y_new = data5("ea")
-    #g_old, y_old = data5("ukb")
+    g_new, x_new, y_new = data5("ea")
+    g_old, x_old, y_old = data5("ukb")
+    x_new, x_old = x_new[:, 0:1], x_old[:, 0:1]
     train, test = sample_index(seed_index, y_new)
     y_train, y_test = y_new[train], y_new[test]
+    x_train, x_test = x_new[train], x_new[test]
     g_train = [g_[train] for g_ in g_new]
     g_test = [g_[test] for g_ in g_new]
 
@@ -45,18 +48,17 @@ def tl5(seed_index):
     df = pd.DataFrame(data={'method': ["Base"],
                             'train': [loss_train], 'test': [loss_test]})
     y_train, y_test = y_train.to(device), y_test.to(device)
+    x_train, x_test = x_train.to(device), x_test.to(device)
     g_train, g_test = [g.to(device) for g in g_train], [g.to(device) for g in g_test]
 
     torch.manual_seed(629)
-    model1 = []
-    for i in range(5):
-        model1.append(MyModelA(g_new[i].shape[1], device))
-    model2 = MyModelB(device)
+    model1 = [MyModelA(g_.shape[1], device) for g_ in g_new]
+    model2 = MyModelB(x_new.shape[1], device)
     net = MyEnsemble(model1, model2)
     lamb_hyper = [1e-1, 1e0, 1e1, 1e2]
-    net_result = ann(g_train, y_train, copy.deepcopy(net), lamb_hyper, criterion)
-    loss_train = criterion(net_result(g_train), y_train).cpu().tolist()
-    loss_test = criterion(net_result(g_test), y_test).cpu().tolist()
+    net_result = ann(g_train, x_train, y_train, copy.deepcopy(net), lamb_hyper, criterion)
+    loss_train = criterion(net_result(g_train, x_train), y_train).cpu().tolist()
+    loss_test = criterion(net_result(g_test, x_test), y_test).cpu().tolist()
     df = df.append(pd.DataFrame(data={'method': ["NN"], 
                                       'train': [loss_train], 'test': [loss_test]}))
 
@@ -64,14 +66,15 @@ def tl5(seed_index):
         g_old[i] = g_old[i].to(device)
 
     y_old = y_old.to(device)
-    net_res = ann(g_old, y_old, copy.deepcopy(net), lamb_hyper, criterion)
+    x_old = x_old.to(device)
+    net_res = ann(g_old, x_old, y_old, copy.deepcopy(net), lamb_hyper, criterion)
     for i in range(5):
         for param in net_res.modelA[i].parameters():
             param.requires_grad = False
 
-    net_result = ann(g_train, y_train, net_res, lamb_hyper, criterion)
-    loss_train = criterion(net_result(g_train), y_train).cpu().tolist()
-    loss_test = criterion(net_result(g_test), y_test).cpu().tolist()
+    net_result = ann(g_train, x_train, y_train, net_res, lamb_hyper, criterion)
+    loss_train = criterion(net_result(g_train, x_train), y_train).cpu().tolist()
+    loss_test = criterion(net_result(g_test, x_test), y_test).cpu().tolist()
     df = df.append(pd.DataFrame(data={'method': ["TL"], 
                                       'train': [loss_train], 'test': [loss_test]}))
 
