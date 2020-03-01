@@ -18,15 +18,13 @@ def data5(name_data):
     x = x.loc[iid]
     y = y.loc[iid]
 
-    idx = (y.smk != 0)
-    g = [g_.loc[idx] for g_ in g]
-    x = x.loc[idx]
     x[['age']] = (x[['age']] - 13)/70
-    y = y.loc[idx]
 
     y = torch.from_numpy(y.values).float()
     x = torch.from_numpy(x.values).float()
     g = [torch.from_numpy(g_.values).float() for g_ in g]
-#    y = (y - torch.mean(y)) / torch.std(y)
+    y[y != 0] = 1
+    y = y.squeeze()
+    y = y.long()
 
     return g, x, y

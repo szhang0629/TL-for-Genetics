@@ -1,9 +1,8 @@
 import pandas as pd
 import torch
-from sample_r import *
 
 
-def data(name, seed_index):
+def data(name):
     g = pd.read_csv("../Data/" + name + "/g.csv", index_col=0)
     x = pd.read_csv("../Data/Phe/x.csv", index_col=0)
     y = pd.read_csv("../Data/Phe/y.csv", index_col=0)
@@ -13,8 +12,6 @@ def data(name, seed_index):
     x = torch.from_numpy(x.values).float()
     y = torch.from_numpy(y.values).float()
 
-    # X = torch.cat([x, g], 1)
-    # X = x
     y = torch.log(y + 1)
     y = (y - torch.mean(y)) / torch.std(y)
 

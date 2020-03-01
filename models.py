@@ -1,3 +1,4 @@
+'''Transfer Learning Models'''
 import torch
 import torch.nn as nn
 
@@ -17,9 +18,9 @@ class MyModelA(nn.Module):
 
 
 class MyModelB(nn.Module):
-    def __init__(self, device):
+    def __init__(self, z_dim, out_dim, device):
         super(MyModelB, self).__init__()
-        self.fc1 = nn.Linear(4, 1).to(device)
+        self.fc1 = nn.Linear(4+z_dim, out_dim).to(device)
 
     def forward(self, x):
         x = self.fc1(x)
@@ -32,7 +33,7 @@ class MyEnsemble(nn.Module):
         self.modelA = modelA
         self.modelB = modelB
 
-    def forward(self, x):
+    def forward(self, x, z):
         x1 = self.modelA(x)
         x2 = self.modelB(x1)
         return x2

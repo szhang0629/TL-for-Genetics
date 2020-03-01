@@ -3,16 +3,17 @@
 
 import copy
 import os
+import time
 
 import pandas as pd
 import torch
 import torch.nn as nn
 
-from ann import ann
-from data import *
-from data5 import *
+from ann import *
+from data_c import *
+from data5_c import *
 from model5 import *
-from sample_r import sample_index
+from sample_r import *
 
 
 def tl5(seed_index):
@@ -39,27 +40,21 @@ def tl5(seed_index):
     g_train = [g_[train] for g_ in g_new]
     g_test = [g_[test] for g_ in g_new]
 
-    criterion = nn.MSELoss()
-    # criterion = nn.SmoothL1Loss()
-    mean_train = torch.mean(y_train)
-    loss_train = criterion(mean_train * torch.ones(y_train.shape), y_train).tolist()
-    loss_test = criterion(mean_train * torch.ones(y_test.shape), y_test).tolist()
-    df = pd.DataFrame(data={'method': ["Base"],
-                            'train': [loss_train], 'test': [loss_test]})
+    criterion = nn.CrossEntropyLoss()
     y_train, y_test = y_train.to(device), y_test.to(device)
     x_train, x_test = x_train.to(device), x_test.to(device)
     g_train, g_test = [g.to(device) for g in g_train], [g.to(device) for g in g_test]
 
     torch.manual_seed(629)
     model1 = [MyModelA(g_.shape[1], device) for g_ in g_new]
-    model2 = MyModelB(x_new.shape[1], 1, device)
+    model2 = MyModelB(x_new.shape[1], 2, device)
     net = MyEnsemble(model1, model2)
-    lamb_hyper = [1e-1, 1e0, 1e1, 1e2]
+    lamb_hyper = [1e-2, 1e-1, 1e0, 1e1]
     net_result = ann(g_train, x_train, y_train, copy.deepcopy(net), lamb_hyper, criterion)
     loss_train = criterion(net_result(g_train, x_train), y_train).cpu().tolist()
     loss_test = criterion(net_result(g_test, x_test), y_test).cpu().tolist()
-    df = df.append(pd.DataFrame(data={'method': ["NN"], 
-                                      'train': [loss_train], 'test': [loss_test]}))
+    df = pd.DataFrame(data={'method': ["NN"], 
+                            'train': [loss_train], 'test': [loss_test]})
 
     for i in range(5):
         g_old[i] = g_old[i].to(device)
@@ -77,7 +72,7 @@ def tl5(seed_index):
     df = df.append(pd.DataFrame(data={'method': ["TL"], 
                                       'train': [loss_train], 'test': [loss_test]}))
 
-    path_output = "../Output_nn/TL/"
+    path_output = "../Output_nn/TL5/CLF/"
     if not os.path.exists(path_output):
         os.makedirs(path_output)
 
