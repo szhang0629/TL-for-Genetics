@@ -81,9 +81,3 @@ class Dataset:
                                       self.z[seq_]], device=self.device) for seq_ in seq]
             else:
                 return [Dataset(data=[self.y[seq_], self.x[seq_], self.z[seq_]], device=self.device) for seq_ in seq]
-
-    # def numpy(self):
-    #     if self.z is None:
-    #         return [self.y.cpu().numpy(), self.x.cpu().numpy(), None]
-    #     else:
-    #         return [self.y.cpu().numpy(), self.x.cpu().numpy(), self.z.cpu().numpy()]

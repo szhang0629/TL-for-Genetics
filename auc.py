@@ -47,12 +47,12 @@ def base(y_train, y_test, criterion, classification=False):
     if classification:
         mean_train = torch.mean(y_train.float()).cpu().tolist()
         mean_train_ = torch.tensor([[mean_train, 1-mean_train]], device=y_train.device)
-        loss_train = criterion(torch.cat(y_train.shape[0]*[mean_train_]), y_train).cpu().tolist()
-        loss_test = criterion(torch.cat(y_test.shape[0]*[mean_train_]), y_test).cpu().tolist()
+        loss_train = criterion(torch.cat(y_train.shape[0]*[mean_train_]), y_train).tolist()
+        loss_test = criterion(torch.cat(y_test.shape[0]*[mean_train_]), y_test).tolist()
     else:
         mean_train = torch.mean(y_train)
-        loss_train = criterion(mean_train * torch.ones(y_train.shape, device=y_train.device), y_train).cpu().tolist()
-        loss_test = criterion(mean_train * torch.ones(y_test.shape, device=y_train.device), y_test).cpu().tolist()
+        loss_train = criterion(mean_train * torch.ones(y_train.shape, device=y_train.device), y_train).tolist()
+        loss_test = criterion(mean_train * torch.ones(y_test.shape, device=y_train.device), y_test).tolist()
 
     return pd.DataFrame(data={'method': ["Base"], 'train': [loss_train], 'test': [loss_test]})
 
@@ -65,7 +65,7 @@ def my_train(net, dataset, lamb, criterion):
     # optimizer = optim.Adam(net.parameters())
     optimizer = optim.Adadelta(net.parameters())
     # optimizer = optim.SGD(self.parameters(), lr=0.1, momentum=0.9)
-    epoch, loss_min, lamb_ = 0, np.float('Inf'), lamb / dataset.y.shape[0]
+    epoch, loss_min, lamb_ = 0, np.float('Inf'), lamb / (dataset.y.shape[0] ** 0.5)
     k, net_cache = 0, copy.deepcopy(net)
 
     while True:
@@ -133,13 +133,14 @@ def pen_l1(net):
 
 def pen_l2(net):
     """l2 penalty on weight parameters"""
-    penalty = 0
-    for name, param in net.named_parameters():
-        # penalty += torch.sum(torch.mul(param, param))
-        if 'weight' in name:
-            penalty += torch.sum(param**2)
-
-    return penalty
+    return sum([torch.sum(param**2) for param in net.parameters()])
+    # penalty = 0
+    # for name, param in net.named_parameters():
+    #     # penalty += torch.sum(torch.mul(param, param))
+    #     if 'weight' in name:
+    #         penalty += torch.sum(param**2)
+    #
+    # return penalty
 
 
 def pen_group(net):
