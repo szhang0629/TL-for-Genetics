@@ -62,9 +62,9 @@ def decay(x, y):
 
 
 def my_train(net, dataset, lamb, criterion):
-    # optimizer = optim.Adam(net.parameters())
-    optimizer = optim.Adadelta(net.parameters())
-    # optimizer = optim.SGD(self.parameters(), lr=0.1, momentum=0.9)
+    optimizer = optim.Adam(net.parameters())
+    # optimizer = optim.Adadelta(net.parameters())
+    # optimizer = optim.SGD(net.parameters(), lr=0.1, momentum=0.9)
     epoch, loss_min, lamb_ = 0, np.float('Inf'), lamb / (dataset.y.shape[0] ** 0.5)
     k, net_cache = 0, copy.deepcopy(net)
 
@@ -133,14 +133,14 @@ def pen_l1(net):
 
 def pen_l2(net):
     """l2 penalty on weight parameters"""
-    return sum([torch.sum(param**2) for param in net.parameters()])
-    # penalty = 0
-    # for name, param in net.named_parameters():
-    #     # penalty += torch.sum(torch.mul(param, param))
-    #     if 'weight' in name:
-    #         penalty += torch.sum(param**2)
-    #
-    # return penalty
+    # return sum([torch.sum(param**2) for param in net.parameters()])
+    penalty = 0
+    for name, param in net.named_parameters():
+        # penalty += torch.sum(torch.mul(param, param))
+        if 'weight' in name:
+            penalty += torch.sum(param**2)
+
+    return penalty
 
 
 def pen_group(net):

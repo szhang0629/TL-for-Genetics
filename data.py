@@ -53,7 +53,7 @@ class Dataset:
                 # else:
                 #     z = None
                 # x, y = x[smoked], y[smoked]
-                # y = torch.log(y + 1)
+                y = torch.log(y + 1)
                 y = (y - torch.mean(y)) / torch.std(y)
         else:
             y, x, z = data

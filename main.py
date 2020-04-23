@@ -24,10 +24,10 @@ def main(seed_index, name="CHRNA5", classification=False, name_data="ukb"):
         path_output = "../Output_nn/UKB/"
     else:
         dataset_all = Dataset(name, classification, device)
-        x_race_indicator = dataset_all.x[:, 0].cpu().numpy()
-        dataset_all.x = dataset_all.x[:, 1:3]
-        old = np.arange(len(x_race_indicator))[x_race_indicator.astype(bool)]
-        new = np.arange(len(x_race_indicator))[(1-x_race_indicator).astype(bool)]
+        race_indicator = dataset_all.z[:, 0].cpu().numpy()
+        dataset_all.z = dataset_all.z[:, 1:3]
+        old = np.arange(len(race_indicator))[race_indicator.astype(bool)]
+        new = np.arange(len(race_indicator))[(1-race_indicator).astype(bool)]
         dataset, dataset_old = dataset_all.split([new, old])
         path_output = "../Output_nn/SAGE/"
 
