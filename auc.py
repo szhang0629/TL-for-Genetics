@@ -25,7 +25,7 @@ def ann(data_set, net, lamb, criterion):
         for i in range(length):
             net_copy = copy.deepcopy(net)
             net_copy = my_train(net_copy, dataset_train, lamb[i], criterion)
-            valid_list[i] = criterion(net_copy(dataset_valid.x, dataset_valid.z), dataset_valid.y).tolist()
+            valid_list[i] = criterion(net_copy(dataset_valid), dataset_valid.y).tolist()
 
         print(valid_list)
         lamb = lamb[np.argmin(valid_list)]
@@ -33,20 +33,13 @@ def ann(data_set, net, lamb, criterion):
         lamb = lamb[0]
 
     net = my_train(net, data_set, lamb, criterion)
-    return net
-
-
-def inn(data_train, data_test, net, lamb_hyper, criterion):
-    net_result = ann(data_train, copy.deepcopy(net), lamb_hyper, criterion)
-    loss_train = criterion(net_result(data_train.x, data_train.z), data_train.y).tolist()
-    loss_test = criterion(net_result(data_test.x, data_test.z), data_test.y).tolist()
-    return pd.DataFrame(data={'method': ["NN"], 'train': [loss_train], 'test': [loss_test]})
+    return net, lamb
 
 
 def base(y_train, y_test, criterion, classification=False):
     if classification:
         mean_train = torch.mean(y_train.float()).cpu().tolist()
-        mean_train_ = torch.tensor([[mean_train, 1-mean_train]], device=y_train.device)
+        mean_train_ = torch.tensor([[mean_train, 1 - mean_train]], device=y_train.device)
         loss_train = criterion(torch.cat(y_train.shape[0]*[mean_train_]), y_train).tolist()
         loss_test = criterion(torch.cat(y_test.shape[0]*[mean_train_]), y_test).tolist()
     else:
@@ -54,7 +47,7 @@ def base(y_train, y_test, criterion, classification=False):
         loss_train = criterion(mean_train * torch.ones(y_train.shape, device=y_train.device), y_train).tolist()
         loss_test = criterion(mean_train * torch.ones(y_test.shape, device=y_train.device), y_test).tolist()
 
-    return pd.DataFrame(data={'method': ["Base"], 'train': [loss_train], 'test': [loss_test]})
+    return pd.DataFrame(data={'method': ["Base"], 'pen': [0], 'train': [loss_train], 'test': [loss_test]})
 
 
 def decay(x, y):
@@ -64,14 +57,14 @@ def decay(x, y):
 def my_train(net, dataset, lamb, criterion):
     optimizer = optim.Adam(net.parameters())
     # optimizer = optim.Adadelta(net.parameters())
-    # optimizer = optim.SGD(net.parameters(), lr=0.1, momentum=0.9)
+    # optimizer = optim.SGD(net.parameters(), lr=0.03, momentum=0.9)
     epoch, loss_min, lamb_ = 0, np.float('Inf'), lamb / (dataset.y.shape[0] ** 0.5)
     k, net_cache = 0, copy.deepcopy(net)
 
     while True:
         optimizer.zero_grad()
         net.eval()
-        output = net(dataset.x, dataset.z)
+        output = net(dataset)
         # pen_fun = [pen_l2, pen_l2, pen_l2]
         # pen_param = [net.ModelA, net.ModelB, net.ModelC]
         mse = criterion(output, dataset.y)
@@ -81,7 +74,7 @@ def my_train(net, dataset, lamb, criterion):
         if epoch % 10 == 0:
             # if epoch % 1000 == 0:
             #     print(epoch, loss.tolist())
-            if loss < loss_min*0.999:
+            if loss < loss_min:
                 k, loss_min, net_cache = 0, loss.tolist(), copy.deepcopy(net)
             else:
                 k += 1
@@ -136,9 +129,9 @@ def pen_l2(net):
     # return sum([torch.sum(param**2) for param in net.parameters()])
     penalty = 0
     for name, param in net.named_parameters():
-        # penalty += torch.sum(torch.mul(param, param))
-        if 'weight' in name:
-            penalty += torch.sum(param**2)
+        penalty += torch.sum(param**2)
+        # if 'weight' in name:
+        #     penalty += torch.sum(param**2)
 
     return penalty
 

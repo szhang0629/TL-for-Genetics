@@ -1,31 +1,38 @@
-"""Apply Transfer Learning in Genetics"""
 # !/usr/bin/env python
 # coding: utf-8
-
-import copy
 import os
-import sys
 
-import pandas as pd
 import torch.nn as nn
 
 from auc import *
-from data import Dataset
+from data import Dataset0, Dataset1
 from models import MyEnsemble
 from models.model_4 import ModelA, ModelC
 
 
-def main(seed_index, name="CHRNA5", classification=False, name_data="ukb"):
-    # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    device = "cpu"
+def main(seed_index, name="CHRNA5", name_data="ukb", hidden_units=4):
+    if name is None:
+        name = ["CHRNA5", "CHRNA3", "CHRNA6", "CHRNB3", "CHRNB4"]
+    classification = False
+    out_dim = 1 + classification
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     if name_data == "ukb":
-        dataset = Dataset(name, classification, device, name_data="ea")
-        dataset_old = Dataset(name, classification, device, name_data="ukb")
+        dataset = Dataset1(name, name_data="ea")
+        dataset.to(device)
+        dataset.process(classification)
+        dataset.z = None
+        dataset_old = Dataset1(name, name_data="ukb")
+        dataset_old.to(device)
+        dataset_old.process(classification)
+        dataset_old.z = None
         path_output = "../Output_nn/UKB/"
     else:
-        dataset_all = Dataset(name, classification, device)
+        dataset_all = Dataset0(name)
+        dataset_all.to(device)
+        dataset_all.process(classification)
         race_indicator = dataset_all.z[:, 0].cpu().numpy()
-        dataset_all.z = dataset_all.z[:, 1:3]
+        # dataset_all.z = dataset_all.z[:, 1:3]
+        dataset_all.z = None
         old = np.arange(len(race_indicator))[race_indicator.astype(bool)]
         new = np.arange(len(race_indicator))[(1-race_indicator).astype(bool)]
         dataset, dataset_old = dataset_all.split([new, old])
@@ -33,56 +40,57 @@ def main(seed_index, name="CHRNA5", classification=False, name_data="ukb"):
 
     train, test = SeedSequence(seed_index, dataset.y.shape[0]).sequence_split
     dataset_train, dataset_test = dataset.split([train, test])
-    lamb_hyper = [1e-3, 1e-2, 1e-1, 1e0, 1e1, 1e2]
-    if classification:
-        path_output += "/CLS/" + name + "/"
-        criterion = nn.CrossEntropyLoss()
-        # df = pd.DataFrame(columns=['method', 'train', 'test'])
-        # df = my_log(dataset_train, dataset_test)
-        df = base(dataset_train.y, dataset_test.y, criterion, classification=True)
+    lamb_hyper = [1e-1, 1e0, 1e1, 1e2, 1e3]
+    path_output += "/CLS/" if classification else "/PRD/" + ("" if type(name) is list else name)
+    path_output += "/"
+    criterion = nn.CrossEntropyLoss() if classification else nn.MSELoss()
+
+    if not os.path.exists(path_output + str(seed_index) + ".csv"):
+        os.makedirs(path_output, exist_ok=True)
+        df = base(dataset_train.y, dataset_test.y, criterion, classification)
         torch.manual_seed(seed_index)
-        if dataset.z is None:
-            # net = Net(dataset.g.shape[1], 2).to(device)
-            net = MyEnsemble(ModelA(dataset.x), ModelC(2)).to(device)
-        else:
-            # net = Net(dataset.g.shape[1], 2, dataset.x.shape[1]).to(device)
-            net = MyEnsemble(ModelA(dataset.x), ModelC(2, dataset.z.shape[1])).to(device)
+        net = MyEnsemble(ModelC(sum([x_.shape[1] for x_ in dataset_train.x]) if type(dataset_train.x) is list
+                                else dataset_train.x.shape[1], out_dim)).to(device)
+        net_lm, lamb = ann(dataset_train, copy.deepcopy(net), lamb_hyper, criterion)
+        loss_train = criterion(net_lm(dataset_train), dataset_train.y).tolist()
+        loss_test = criterion(net_lm(dataset_test), dataset_test.y).tolist()
+        df = df.append(pd.DataFrame(data={'method': ["LM"], 'pen': [lamb], 'train': [loss_train], 'test': [loss_test]}))
+        df.to_csv(path_output + str(seed_index) + ".csv", index=False)
+        print(df)
+
+    path_output += str(hidden_units) + "/"
+    torch.manual_seed(seed_index)
+    net = MyEnsemble(ModelA(dataset.x, hidden_units), ModelC(hidden_units * (len(dataset.x) if type(dataset.x) is list
+                                                                             else 1), out_dim)).to(device)
+    net_nn, lamb = ann(dataset_train, copy.deepcopy(net), lamb_hyper, criterion)
+    loss_train = criterion(net_nn(dataset_train), dataset_train.y).tolist()
+    loss_test = criterion(net_nn(dataset_test), dataset_test.y).tolist()
+    df = pd.DataFrame(data={'method': ["NN"], 'pen': [lamb], 'train': [loss_train], 'test': [loss_test]})
+
+    folder_model = "../Models/" + ("clf/" if classification else "prd/") + name_data + \
+                   ("/" if type(name) is list else "/" + name + "/")
+    model_name = str(hidden_units) + ".md"
+    if os.path.exists(folder_model + model_name):
+        net_old = torch.load(folder_model + model_name)
+        net_old.eval()
     else:
-        path_output += "/PRD/" + name + "/"
-        criterion = nn.MSELoss()
-        df = base(dataset_train.y, dataset_test.y, criterion)
-        # df = df.append(my_lasso(dataset_train, dataset_test, [1e-3, 1e-2, 1e-1, 1e0], criterion))
-        torch.manual_seed(seed_index)
-        if dataset.x is None:
-            net = MyEnsemble(ModelA(dataset.x.shape[1]), ModelC(1)).to(device)
-        else:
-            net = MyEnsemble(ModelA(dataset.x), ModelC(1, dataset.z.shape[1])).to(device)
+        torch.manual_seed(0)
+        net_old, lamb = ann(dataset_old, copy.deepcopy(net), lamb_hyper, criterion)
+        for param in net_old.model0.parameters():
+            param.requires_grad = False
+        os.makedirs(folder_model, exist_ok=True)
+        torch.save(net_old, folder_model + model_name)
 
-    df = df.append(inn(dataset_train, dataset_test, copy.deepcopy(net), lamb_hyper, criterion))
-    net_res = ann(dataset_old, copy.deepcopy(net), lamb_hyper, criterion)
-    for param in net_res.ModelA.parameters():
-        param.requires_grad = False
+    net_tl, lamb = ann(dataset_train, copy.deepcopy(net_old), lamb_hyper, criterion)
+    loss_train = criterion(net_tl(dataset_train), dataset_train.y).tolist()
+    loss_test = criterion(net_tl(dataset_test), dataset_test.y).tolist()
+    df = df.append(pd.DataFrame(data={'method': ["TL"], 'pen': [lamb], 'train': [loss_train], 'test': [loss_test]}))
 
-    # if type(name) is list:
-    #     path_model = ("clf_" if classification else "prd_") + name_data+"_tf.md"
-    # else:
-    #     path_model = ("clf_" if classification else "prd_") + name_data+"_tf_"+name+".md"
-    # if os.path.exists(path_model):
-    #     net_res = torch.load(path_model)
-    #     net_res.eval()
-    # else:
-    #     net_res = ann(dataset_old, copy.deepcopy(net), lamb_hyper, criterion)
-    #     for param in net_res.ModelA.parameters():
-    #         param.requires_grad = False
-    #     torch.save(net_res, path_model)
-
-    df_ = inn(dataset_train, dataset_test, copy.deepcopy(net_res), lamb_hyper, criterion)
-    df_.method = "TL"
-    df = df.append(df_)
-
-    if not os.path.exists(path_output):
-        os.makedirs(path_output)
-
+    os.makedirs(path_output, exist_ok=True)
     df.to_csv(path_output + str(seed_index) + ".csv", index=False)
     print(df)
     return
+
+#
+# for num in [4, 8, 16, 32, 64]:
+#     main(1, hidden_units=num)

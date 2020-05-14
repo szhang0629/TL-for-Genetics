@@ -4,7 +4,6 @@
 import copy
 import os
 
-import pandas as pd
 import torch.nn as nn
 
 from auc import *
