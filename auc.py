@@ -4,7 +4,6 @@ import torch
 
 import numpy as np
 import pandas as pd
-import torch.optim as optim
 
 
 class SeedSequence:
@@ -24,7 +23,7 @@ def ann(data_set, net, lamb, criterion):
         dataset_train, dataset_valid = data_set.split([train, valid])
         for i in range(length):
             net_copy = copy.deepcopy(net)
-            net_copy = my_train(net_copy, dataset_train, lamb[i], criterion)
+            net_copy.fit(dataset_train, lamb[i], criterion)
             valid_list[i] = criterion(net_copy(dataset_valid), dataset_valid.y).tolist()
 
         print(valid_list)
@@ -32,7 +31,7 @@ def ann(data_set, net, lamb, criterion):
     else:
         lamb = lamb[0]
 
-    net = my_train(net, data_set, lamb, criterion)
+    net.fit(data_set, lamb, criterion)
     return net, lamb
 
 
@@ -48,100 +47,3 @@ def base(y_train, y_test, criterion, classification=False):
         loss_test = criterion(mean_train * torch.ones(y_test.shape, device=y_train.device), y_test).tolist()
 
     return pd.DataFrame(data={'method': ["Base"], 'pen': [0], 'train': [loss_train], 'test': [loss_test]})
-
-
-def decay(x, y):
-    return y * (torch.abs(x) > torch.abs(y)) + x * (torch.abs(x) < torch.abs(y))
-
-
-def my_train(net, dataset, lamb, criterion):
-    optimizer = optim.Adam(net.parameters())
-    # optimizer = optim.Adadelta(net.parameters())
-    # optimizer = optim.SGD(net.parameters(), lr=0.03, momentum=0.9)
-    epoch, loss_min, lamb_ = 0, np.float('Inf'), lamb / (dataset.y.shape[0] ** 0.5)
-    k, net_cache = 0, copy.deepcopy(net)
-
-    while True:
-        optimizer.zero_grad()
-        net.eval()
-        output = net(dataset)
-        # pen_fun = [pen_l2, pen_l2, pen_l2]
-        # pen_param = [net.ModelA, net.ModelB, net.ModelC]
-        mse = criterion(output, dataset.y)
-        # pen = sum(map(lambda fun, param_fun: fun(param_fun), pen_fun, pen_param)) * lamb_
-        pen = pen_l2(net) * lamb_
-        loss = mse + pen
-        if epoch % 10 == 0:
-            # if epoch % 1000 == 0:
-            #     print(epoch, loss.tolist())
-            if loss < loss_min:
-                k, loss_min, net_cache = 0, loss.tolist(), copy.deepcopy(net)
-            else:
-                k += 1
-                if k == 100:
-                    break
-        # ModelA_copy = copy.deepcopy(net.ModelA)
-        loss.backward()
-        # for name, param in net.ModelA.named_parameters():
-        #     if param.requires_grad and ('weight' in name):
-        #         if pen_fun[0] == pen_l1:
-        #             x_grad = copy.deepcopy(param.grad)*(param == 0.)
-        #             x_grad.requires_grad = True
-        #             y_grad = torch.sum(torch.abs(x_grad))
-        #             y_grad.backward()
-        #             param.grad -= decay(param.grad, x_grad.grad * lamb_)
-        #         elif pen_fun[0] == pen_group:
-        #             x_grad = copy.deepcopy(param.grad)*((torch.sum(param**2, dim=0) == 0.).repeat(param.shape[0], 1))
-        #             x_grad.requires_grad = True
-        #             y_grad = torch.sum((x_grad.shape[0] * torch.sum(x_grad ** 2, dim=0)) ** 0.5)
-        #             y_grad.backward()
-        #             param.grad -= decay(param.grad, x_grad.grad * lamb_)
-
-        optimizer.step()
-        # if pen_fun[0] == pen_l1 or pen_fun[0] == pen_group:
-        #     for param, param_old in zip(net.ModelA.parameters(), ModelA_copy.parameters()):
-        #         if param.dim() > 1:
-        #             param.requires_grad = False
-        #             param -= param * ((torch.sign(param)*torch.sign(param_old)) < 0)
-        #             param.requires_grad = True
-
-        epoch += 1
-
-    # zeroes = [torch.sum(param == 0, dim=0).tolist() for param in net_cache.ModelA.parameters()]
-    # zeroes = [torch.sum(param ** 2, dim=0).tolist() for param in net_cache.ModelA.parameters()]
-    print(epoch - 100 * 10, "loss:", loss_min, "lamb:", lamb)
-    return net_cache
-
-
-def pen_l1(net):
-    """l1 penalty on weight parameters"""
-    penalty = 0
-    for name, param in net.named_parameters():
-        # penalty += torch.sum(torch.mul(param, param))
-        if 'bias' not in name:
-            penalty += torch.sum(torch.abs(param))
-
-    return penalty
-
-
-def pen_l2(net):
-    """l2 penalty on weight parameters"""
-    # return sum([torch.sum(param**2) for param in net.parameters()])
-    penalty = 0
-    for name, param in net.named_parameters():
-        penalty += torch.sum(param**2)
-        # if 'weight' in name:
-        #     penalty += torch.sum(param**2)
-
-    return penalty
-
-
-def pen_group(net):
-    """group penalty on weight parameters"""
-    penalty = 0
-    for name, param in net.named_parameters():
-        # penalty += torch.sum(torch.mul(param, param))
-        if 'weight' in name:
-            penalty += torch.sum((param.shape[0]*torch.sum(param**2, dim=0))**0.5)
-
-    return penalty

@@ -10,7 +10,7 @@ from models import MyEnsemble
 from models.model_4 import ModelA, ModelC
 
 
-def main(seed_index, name="CHRNA5", name_data="ukb", hidden_units=4):
+def main(seed_index, name="CHRNA5", name_data="sage", hidden_units=4):
     if name is None:
         name = ["CHRNA5", "CHRNA3", "CHRNA6", "CHRNB3", "CHRNB4"]
     classification = False
@@ -85,7 +85,6 @@ def main(seed_index, name="CHRNA5", name_data="ukb", hidden_units=4):
     loss_train = criterion(net_tl(dataset_train), dataset_train.y).tolist()
     loss_test = criterion(net_tl(dataset_test), dataset_test.y).tolist()
     df = df.append(pd.DataFrame(data={'method': ["TL"], 'pen': [lamb], 'train': [loss_train], 'test': [loss_test]}))
-
     os.makedirs(path_output, exist_ok=True)
     df.to_csv(path_output + str(seed_index) + ".csv", index=False)
     print(df)
