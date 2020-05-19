@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
+import random
 import torch
+import torch.nn as nn
 
 
 class Dataset:
@@ -9,32 +11,26 @@ class Dataset:
 
     def to(self, device):
         self.y = self.y.to(device)
-        if type(self.x) is list:
-            self.x = [x_.to(device) for x_ in self.x]
-        else:
-            self.x = self.x.to(device)
-        if self.z is not None:
-            self.z = self.z.to(device)
-        else:
-            self.z = None
+        self.x = [x_.to(device) for x_ in self.x] if type(self.x) is list else self.x.to(device)
+        self.z = None if self.z is None else self.z.to(device)
 
     def split(self, seq):
         device = self.y.device
         res = []
         for seq_ in seq:
-            if type(self.x) is list:
-                x_ = [x_[seq_] for x_ in self.x]
-            else:
-                x_ = self.x[seq_]
-            if self.z is None:
-                z_ = None
-            else:
-                z_ = self.z[seq_]
+            x_ = [x_[seq_] for x_ in self.x] if type(self.x) is list else self.x[seq_]
+            z_ = None if self.z is None else self.z[seq_]
             res_ = Dataset(data=[self.y[seq_], x_, z_])
             res_.to(device)
             res.append(res_)
 
         return res
+
+    def split_seed(self, seed=0, split_ratio=0.8):
+        sequence = list(range(self.y.shape[0]))
+        random.Random(seed).shuffle(sequence)
+        point = round(len(sequence) * split_ratio)
+        return self.split([sequence[:point], sequence[point:]])
 
     def process(self, classification=False):
         y = self.y
@@ -52,6 +48,15 @@ class Dataset:
             # x, y = x[smoked], y[smoked]
             y = torch.log(y + 1)
             self.y = (y - torch.mean(y)) / torch.std(y)
+
+    def base(self, y_base, classification):
+        if classification:
+            criterion = nn.CrossEntropyLoss()
+            y_base_ = torch.tensor([[y_base, 1 - y_base]], device=self.y.device)
+            return criterion(torch.cat(self.y.shape[0]*[y_base_]), self.y).tolist()
+        else:
+            criterion = nn.MSELoss()
+            return criterion(y_base * torch.ones(self.y.shape, device=self.y.device), self.y).tolist()
 
 
 class Dataset0(Dataset):
@@ -94,26 +99,3 @@ class Dataset1(Dataset):
             x = torch.from_numpy(x.loc[iid].values).float()
 
         super().__init__(data=[y, x, z])
-
-
-# class Dataset2(Dataset):
-#     def __init__(self, name="rat"):
-#         if name == "rat":
-#             x = pd.read_csv("../Data/g_ENSRNOG00000014187.csv", index_col=0)
-#             z = pd.read_csv("../Data/x_rat.csv", index_col=0)
-#             y = pd.read_csv("../Data/y_rat.csv", index_col=0)
-#         if name == "mice":
-#             x = pd.read_csv("../Data/g_ENSMUSG00000005533.csv", index_col=0)
-#             x.index = x.index.astype(str)
-#             z = pd.read_csv("../Data/x_mice.csv", index_col=0)
-#             y = pd.read_csv("../Data/y_mice.csv", index_col=0)
-#
-#         iid = np.intersect1d(z.index.values, y.index.values)
-#         iid = np.intersect1d(iid, x.index.values)
-#         x, y, z = x.loc[iid].values, y.loc[iid].values, z.loc[iid].values
-#         y = np.log(y)
-#         reg = LinearRegression().fit(x, y)
-#         y = y - reg.predict(x)
-#         x, y = torch.from_numpy(x).float(), torch.from_numpy(y).float()
-#         super().__init__(data=[y, x, None])
-#         self.y = (self.y - torch.mean(self.y)) / torch.std(self.y)
