@@ -19,8 +19,7 @@ class ModelA(nn.Module):
             x1 = [torch.sigmoid(getattr(self, "fc"+str(i))(x[i])) for i in range(len(x))]
             return torch.cat(x1, 1)
         else:
-            x1 = torch.sigmoid(self.fc(x))
-            return x1
+            return torch.sigmoid(self.fc(x))
 
 
 class ModelC(nn.Module):
@@ -55,13 +54,13 @@ class MyEnsemble(nn.Module):
         else:
             return self.model0(dataset.x, dataset.z)
 
-    def fit(self, dataset, lamb, criterion, dataset_old):
+    def fit(self, dataset, lamb, dataset_old):
+        criterion = nn.CrossEntropyLoss() if dataset.classification else nn.MSELoss()
         net, epoch, k, mse_min, pen_min = copy.deepcopy(self), 0, 0, 0, 0
         optimizer = optim.Adam(net.parameters())
         total_num = dataset.y.shape[0] + (0 if dataset_old is None else dataset_old.y.shape[0])
         loss_min, lamb_ = float('Inf'), lamb / (total_num ** 0.5)
         y = dataset.y if dataset_old is None else torch.cat([dataset.y, dataset_old.y], 0)
-
         while True:
             optimizer.zero_grad()
             net.eval()
@@ -81,34 +80,26 @@ class MyEnsemble(nn.Module):
             optimizer.step()
             epoch += 1
 
-        print(epoch - 100 * 10, "mse:", mse_min, "pen:", pen_min)
+        print(epoch - 100 * 10, "mse:", mse_min, "pen:", pen_min, "loss:", loss_min)
 
-    def ann(self, dataset, lamb, criterion, dataset_old=None):
-        """penalty hyper parameter selection"""
+    def ann(self, dataset, lamb, dataset_old=None):
         net = copy.deepcopy(self)
-        length = len(lamb)
-        if length > 1:
-            valid_list = np.zeros(length)
-            dataset_train, dataset_valid = dataset.split_seed()
-            for i in range(length):
-                net_copy = copy.deepcopy(net)
-                net_copy.fit(dataset_train, lamb[i], criterion, dataset_old)
-                valid_list[i] = criterion(net_copy(dataset_valid), dataset_valid.y).tolist()
+        valid_list = []
+        dataset_train, dataset_valid = dataset.split_seed()
+        for lamb_ in lamb:
+            net_copy = copy.deepcopy(net)
+            net_copy.fit(dataset_train, lamb_, dataset_old)
+            valid_list.append(dataset_valid.loss(net_copy))
 
-            print(valid_list)
-            lamb = lamb[np.argmin(valid_list)]
-        else:
-            lamb = lamb[0]
-
-        net.fit(dataset, lamb, criterion, dataset_old)
+        print(valid_list)
+        lamb = lamb[np.argmin(np.array(valid_list))]
+        net.fit(dataset, lamb, dataset_old)
         return net, lamb
 
     def penalty(self):
-        """l2 penalty on weight parameters"""
         # return [torch.sum(param**2) for param in net.parameters()]
-        pen = []
-        for name, param in self.named_parameters():
-            if 'weight' in name:
-                pen.append(torch.sum(param ** 2))
-
-        return pen
+        # return [torch.sum(param ** 2) for name, param in self.named_parameters() if ('weight' in name)
+        #         and param.requires_grad]
+        # return [torch.sum(torch.abs(param)) for name, param in self.named_parameters() if param.requires_grad]
+        return [torch.sum(torch.abs(param)) for name, param in self.named_parameters() if ('weight' in name)
+                and param.requires_grad]
