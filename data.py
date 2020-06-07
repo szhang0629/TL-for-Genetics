@@ -39,10 +39,6 @@ class Dataset:
             y = y.squeeze()
             self.y = y.long()
         else:
-            # y_indicator = y[:, 0].cpu().numpy()
-            # smoked = np.arange(len(y_indicator))[y_indicator.astype(bool)]
-            # self.z = None if self.z is None else self.z[smoked]
-            # self.x, self.y = self.x[smoked], self.y[smoked]
             self.y = torch.log(self.y + 1)
             self.y = (self.y - torch.mean(self.y)) / torch.std(self.y)
 
@@ -80,4 +76,18 @@ class Dataset1(Dataset):
             x = [torch.from_numpy(x_.loc[iid].values).float() for x_ in x]
         else:
             x = torch.from_numpy(x.loc[iid].values).float()
+        super().__init__(data=[y, x, z])
+
+
+class Dataset2(Dataset):
+    def __init__(self, name="CHRNA5"):
+        x = pd.read_csv("../../Data/" + name + "/g.csv", index_col=0)
+        x = torch.from_numpy(x.values).float()
+        z = pd.read_csv("../../Data/Phe/x.csv", index_col=0)
+        y = pd.read_csv("../../Data/Phe/y.csv", index_col=0)
+
+        z[['age_int']] = (z[['age_int']] - 13) / 70
+        z = z[['race', 'sex', 'age_int']]
+        z = torch.from_numpy(z.values).float()
+        y = torch.from_numpy(y.values).float()
         super().__init__(data=[y, x, z])

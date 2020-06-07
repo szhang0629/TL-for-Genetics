@@ -9,7 +9,7 @@ from data import Dataset1
 from models import ModelA, ModelC, MyEnsemble
 
 
-def main(seed_index, name="CHRNA5", name_data="sage", hidden_units=2):
+def main(seed_index, name="CHRNA5", name_data="sage", hidden_units=4):
     if name is None:
         name = ["CHRNA5", "CHRNA3", "CHRNA6", "CHRNB3", "CHRNB4"]
     classification = False
@@ -34,57 +34,41 @@ def main(seed_index, name="CHRNA5", name_data="sage", hidden_units=2):
         dataset_old.to(device)
         dataset_old.process(classification)
         dataset_old.z = None
-        path_output = "../Output_nn/UKB/"
+        path_output = "../Output_nn/SAGE/"
 
     dataset_train, dataset_test = dataset.split_seed(seed_index)
-    lamb_hyper = 10. ** np.arange(-1, 4)
-    path_output += "/CLS/" if classification else "/PRD/" + ("" if type(name) is list else name)
-    path_output += "/"
+    lamb_hyper = 10. ** np.arange(-2, 3)
+    path_output += ("All" if type(name) is list else name) + "/"
+    in_dim = [x_.shape[1] for x_ in dataset.x] if type(dataset.x) is list else dataset.x.shape[1]
 
     if not os.path.exists(path_output + str(seed_index) + ".csv"):
         os.makedirs(path_output, exist_ok=True)
-        y_base = torch.mean(dataset_train.y)
-        df = pd.DataFrame(data={'method': ["Base"], 'pen': [0],
-                                'train': [dataset_train.base(y_base)], 'test': [dataset_test.base(y_base)]})
-        torch.manual_seed(seed_index)
-        net = MyEnsemble(ModelC(sum([x_.shape[1] for x_ in dataset_train.x]) if type(dataset_train.x) is list
-                                else dataset_train.x.shape[1], out_dim)).to(device)
-        net_lm, lamb = net.ann(dataset_train, lamb_hyper)
-        df = df.append(pd.DataFrame(data={'method': ["LM"], 'pen': [lamb],
-                                          'train': [dataset_train.loss(net_lm)], 'test': [dataset_test.loss(net_lm)]}))
-        df.to_csv(path_output + str(seed_index) + ".csv", index=False)
-        print(df)
-
-    path_output += str(hidden_units) + "/"
+    y_base = torch.mean(dataset_train.y)
+    res = pd.DataFrame(data={'method': ["Base"], 'pen': [1.0],
+                             'train': [dataset_train.base(y_base)], 'test': [dataset_test.base(y_base)]})
     torch.manual_seed(seed_index)
-    net = MyEnsemble(ModelA(dataset.x, hidden_units), ModelC(hidden_units * (len(dataset.x) if type(dataset.x) is list
-                                                                             else 1), out_dim)).to(device)
+    net = MyEnsemble(ModelC(in_dim, out_dim)).to(device)
+    net_lm, lamb = net.ann(dataset_train, lamb_hyper)
+    res = res.append(pd.DataFrame(data={'method': ["LM"], 'pen': [lamb],
+                                        'train': [dataset_train.loss(net_lm)], 'test': [dataset_test.loss(net_lm)]}))
+    torch.manual_seed(seed_index)
+    model_a = ModelA(in_dim, hidden_units)
+    model_c = ModelC([hidden_units] * len(dataset.x) if type(dataset.x) is list else hidden_units, out_dim)
+    net = MyEnsemble(model_a, model_c).to(device)
     net_nn, lamb = net.ann(dataset_train, lamb_hyper)
-    df = pd.DataFrame(data={'method': ["NN"], 'pen': [lamb],
-                            'train': [dataset_train.loss(net_nn)], 'test': [dataset_test.loss(net_nn)]})
-
+    res = res.append(pd.DataFrame(data={'method': ["NN"], 'pen': [lamb],
+                                        'train': [dataset_train.loss(net_nn)], 'test': [dataset_test.loss(net_nn)]}))
     net_ml, lamb = net.ann(dataset_train, lamb_hyper, dataset_old)
-    df = df.append(pd.DataFrame(data={'method': ["ML"], 'pen': [lamb],
-                                      'train': [dataset_train.loss(net_ml)], 'test': [dataset_test.loss(net_ml)]}))
-
-    # folder_model = "../Models/" + ("clf/" if classification else "prd/") + name_data + \
-    #                ("/" if type(name) is list else "/" + name + "/")
-    # model_name = str(hidden_units) + ".md"
-    # if os.path.exists(folder_model + model_name):
-    #     net_old = torch.load(folder_model + model_name)
-    #     net_old.eval()
-    # else:
-    #     torch.manual_seed(0)
-    #     net_old, lamb = net.ann(dataset_old, lamb_hyper)
-    #     for param in net_old.model0.parameters():
-    #         param.requires_grad = False
-    #     os.makedirs(folder_model, exist_ok=True)
-    #     torch.save(net_old, folder_model + model_name)
-    #
-    # net_tl, lamb = net_old.ann(dataset_train, lamb_hyper)
-    # df = df.append(pd.DataFrame(data={'method': ["TL"], 'pen': [lamb],
-    #                                   'train': [dataset_train.loss(net_tl)], 'test': [dataset_test.loss(net_tl)]}))
+    res = res.append(pd.DataFrame(data={'method': ["ML"], 'pen': [lamb],
+                                        'train': [dataset_train.loss(net_ml)], 'test': [dataset_test.loss(net_ml)]}))
+    torch.manual_seed(seed_index)
+    net_old, lamb = net.ann(dataset_old, lamb_hyper)
+    for param in net_old.model0.parameters():
+        param.requires_grad = False
+    net_tl, lamb = net_old.ann(dataset_train, lamb_hyper)
+    res = res.append(pd.DataFrame(data={'method': ["TL"], 'pen': [lamb],
+                                        'train': [dataset_train.loss(net_tl)], 'test': [dataset_test.loss(net_tl)]}))
     os.makedirs(path_output, exist_ok=True)
-    df.to_csv(path_output + str(seed_index) + ".csv", index=False)
-    print(df)
+    res.to_csv(path_output + str(seed_index) + ".csv", index=False)
+    print(res)
     return
