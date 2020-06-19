@@ -3,6 +3,7 @@ import pandas as pd
 import random
 import torch
 import torch.nn as nn
+from sklearn import linear_model as lm
 
 
 class Dataset:
@@ -41,6 +42,7 @@ class Dataset:
         else:
             self.y = torch.log(self.y + 1)
             self.y = (self.y - torch.mean(self.y)) / torch.std(self.y)
+            # self.y = self.y / torch.std(self.y)
 
     def base(self, y_base):
         if self.classification:
@@ -50,6 +52,16 @@ class Dataset:
         else:
             criterion = nn.MSELoss()
             return criterion(y_base * torch.ones(self.y.shape, device=self.y.device), self.y).tolist()
+
+    def lm_fit(self, alphas=np.logspace(-6, -1, 6)):
+        return lm.RidgeCV(cv=5, alphas=alphas).fit(self.x.cpu().numpy(), self.y.cpu().numpy().reshape(self.y.shape[0]))
+        # return lm.LassoCV(alphas=alphas).fit(self.x.cpu().numpy(), self.y.cpu().numpy().reshape(self.y.shape[0]))
+        # return lm.LinearRegression().fit(self.x.cpu().numpy(), self.y.cpu().numpy())
+
+    def lm_pred(self, model):
+        criterion = nn.CrossEntropyLoss() if self.classification else nn.MSELoss()
+        y_hat = torch.from_numpy(model.predict(self.x.cpu().numpy()).reshape(self.y.shape)).to(self.y.device)
+        return criterion(y_hat, self.y).tolist()
 
     def loss(self, model):
         criterion = nn.CrossEntropyLoss() if self.classification else nn.MSELoss()
@@ -62,6 +74,8 @@ class Dataset1(Dataset):
             x = [pd.read_csv("../../Data/" + name_ + "/g_" + name_data + ".csv", index_col=0) for name_ in name]
         else:
             x = pd.read_csv("../../Data/" + name + "/g_" + name_data + ".csv", index_col=0)
+        if name_data in {'ea', 'aa'}:
+            name_data = "sage"
         z = pd.read_csv("../../Data/Phe/x_" + name_data + ".csv", index_col=0)
         z[['age']] = (z[['age']] - 13) / 70
         y = pd.read_csv("../../Data/Phe/y_" + name_data + ".csv", index_col=0)
@@ -71,23 +85,23 @@ class Dataset1(Dataset):
                 iid = np.intersect1d(iid, x_.index.values)
         else:
             iid = np.intersect1d(iid, x.index.values)
-        z, y = torch.from_numpy(z.loc[iid].values).float(), torch.from_numpy(y.loc[iid].values).float()
+        z, y = torch.from_numpy(z.loc[iid].values).double(), torch.from_numpy(y.loc[iid].values).double()
         if type(x) is list:
-            x = [torch.from_numpy(x_.loc[iid].values).float() for x_ in x]
+            x = [torch.from_numpy(x_.loc[iid].values).double() for x_ in x]
         else:
-            x = torch.from_numpy(x.loc[iid].values).float()
+            x = torch.from_numpy(x.loc[iid].values).double()
         super().__init__(data=[y, x, z])
 
 
 class Dataset2(Dataset):
     def __init__(self, name="CHRNA5"):
         x = pd.read_csv("../../Data/" + name + "/g.csv", index_col=0)
-        x = torch.from_numpy(x.values).float()
+        x = torch.from_numpy(x.values).double()
         z = pd.read_csv("../../Data/Phe/x.csv", index_col=0)
         y = pd.read_csv("../../Data/Phe/y.csv", index_col=0)
 
         z[['age_int']] = (z[['age_int']] - 13) / 70
         z = z[['race', 'sex', 'age_int']]
-        z = torch.from_numpy(z.values).float()
-        y = torch.from_numpy(y.values).float()
+        z = torch.from_numpy(z.values).double()
+        y = torch.from_numpy(y.values).double()
         super().__init__(data=[y, x, z])

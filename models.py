@@ -12,14 +12,17 @@ class ModelA(nn.Module):
             for i in range(len(in_dim)):
                 setattr(self, "fc" + str(i), nn.Linear(in_dim[i], out_dim))
         else:
+            # self.drop_layer = nn.Dropout(p=0.5)
             self.fc = nn.Linear(in_dim, out_dim)
+            # self.bn = nn.BatchNorm1d(num_features=out_dim)
 
-    def forward(self, x):
+    def forward(self, x, z=None):
         if type(x) is list:
-            x1 = [torch.sigmoid(getattr(self, "fc"+str(i))(x[i])) for i in range(len(x))]
+            x1 = [getattr(self, "fc"+str(i))(x[i]) for i in range(len(x))]
             return torch.cat(x1, 1)
         else:
-            return torch.sigmoid(self.fc(x))
+            # x = self.drop_layer(x)
+            return self.fc(x)
 
 
 class ModelC(nn.Module):
@@ -45,28 +48,24 @@ class MyEnsemble(nn.Module):
             i += 1
         self.model_old = copy.deepcopy(getattr(self, "model" + str(i-1)))
 
-    def forward(self, dataset, dataset_old=None):
+    def forward(self, dataset, old=False):
+        res = self.model0(dataset.x, dataset.z)
+        if old:
+            res = torch.sigmoid(res)
+            return self.model_old(res)
         if hasattr(self, 'model1'):
-            x1 = self.model0(dataset.x)
-            y = self.model1(x1, dataset.z)
-            if dataset_old is not None:
-                x1_old = self.model0(dataset_old.x)
-                y_old = self.model_old(x1_old, dataset_old.z)
-                return torch.cat([y, y_old], 0)
-            return y
-        else:
-            return self.model0(dataset.x, dataset.z)
+            res = torch.sigmoid(res)
+            res = self.model1(res)
+        return res
 
     def fit(self, dataset, lamb, dataset_old):
         criterion = nn.CrossEntropyLoss() if dataset.classification else nn.MSELoss()
         net, epoch, k, loss_min = copy.deepcopy(self), 0, 0, float('Inf')
         optimizer = optim.Adam(net.parameters()) # , weight_decay=lamb)
-        y = dataset.y if dataset_old is None else torch.cat([dataset.y, dataset_old.y], 0)
         while True:
             optimizer.zero_grad()
             net.eval()
-            output = net(dataset, dataset_old)
-            loss = criterion(output, y)
+            loss = criterion(net(dataset), dataset.y)
             if epoch % 10 == 0:
                 if loss < loss_min:
                     k, loss_min = 0, loss.tolist()  
@@ -75,6 +74,8 @@ class MyEnsemble(nn.Module):
                     k += 1
                     if k == 100:
                         break
+            if dataset_old is not None:
+                loss += criterion(net(dataset_old, True), dataset_old.y)
             pen = net.penalty() * lamb
             loss_plus = loss + pen
             loss_plus.backward()
@@ -98,7 +99,8 @@ class MyEnsemble(nn.Module):
     def penalty(self):
         penalty = 0
         for name, param in self.named_parameters():
-            if param.requires_grad:
-                 if not name.endswith(".bias"):
-                     penalty += torch.sum(param ** 2)
+            if param.requires_grad and "fc" in name:
+                if not (name.endswith(".bias") and 'model1' in name):
+                    penalty += torch.sum(param ** 2)
+                    # penalty += torch.sum(torch.abs(param))
         return penalty
