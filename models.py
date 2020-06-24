@@ -66,6 +66,8 @@ class MyEnsemble(nn.Module):
             optimizer.zero_grad()
             net.eval()
             loss = criterion(net(dataset), dataset.y)
+            pen = net.penalty() * lamb
+            loss = loss + pen
             if epoch % 10 == 0:
                 if loss < loss_min:
                     k, loss_min = 0, loss.tolist()  
@@ -76,9 +78,7 @@ class MyEnsemble(nn.Module):
                         break
             if dataset_old is not None:
                 loss += criterion(net(dataset_old, True), dataset_old.y)
-            pen = net.penalty() * lamb
-            loss_plus = loss + pen
-            loss_plus.backward()
+            loss.backward()
             optimizer.step()
             epoch += 1
         print(epoch - 100 * 10, "loss:", loss_min)
@@ -100,7 +100,7 @@ class MyEnsemble(nn.Module):
         penalty = 0
         for name, param in self.named_parameters():
             if param.requires_grad and "fc" in name:
-                if not (name.endswith(".bias") and 'model1' in name):
+                if not name.endswith(".bias"):
                     penalty += torch.sum(param ** 2)
                     # penalty += torch.sum(torch.abs(param))
         return penalty

@@ -53,7 +53,7 @@ class Dataset:
             criterion = nn.MSELoss()
             return criterion(y_base * torch.ones(self.y.shape, device=self.y.device), self.y).tolist()
 
-    def lm_fit(self, alphas=np.logspace(-6, -1, 6)):
+    def lm_fit(self, alphas=np.logspace(-2, 4, 7)):
         return lm.RidgeCV(cv=5, alphas=alphas).fit(self.x.cpu().numpy(), self.y.cpu().numpy().reshape(self.y.shape[0]))
         # return lm.LassoCV(alphas=alphas).fit(self.x.cpu().numpy(), self.y.cpu().numpy().reshape(self.y.shape[0]))
         # return lm.LinearRegression().fit(self.x.cpu().numpy(), self.y.cpu().numpy())
