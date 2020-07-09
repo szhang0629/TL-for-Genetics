@@ -1,9 +1,10 @@
 import numpy as np
 import pandas as pd
+import os
 import random
 import torch
 import torch.nn as nn
-from sklearn import linear_model as lm
+from sklearn.impute import SimpleImputer
 
 
 class Dataset:
@@ -12,17 +13,14 @@ class Dataset:
         self.classification = classification
 
     def to(self, device):
-        self.y = self.y.to(device)
-        self.x = [x_.to(device) for x_ in self.x] if type(self.x) is list else self.x.to(device)
+        self.y, self.x = self.y.to(device), self.x.to(device)
         self.z = None if self.z is None else self.z.to(device)
 
     def split(self, seq):
         res = []
         for seq_ in seq:
-            x_ = [x_[seq_] for x_ in self.x] if type(self.x) is list else self.x[seq_]
             z_ = None if self.z is None else self.z[seq_]
-            res_ = Dataset(data=[self.y[seq_], x_, z_])
-            res_.to(self.y.device)
+            res_ = Dataset(data=[self.y[seq_], self.x[seq_], z_])
             res.append(res_)
         return res
 
@@ -32,76 +30,71 @@ class Dataset:
         point = round(len(sequence) * split_ratio)
         return self.split([sequence[:point], sequence[point:]])
 
-    def process(self, classification=False):
+    def process(self, classification=False, device=None):
         self.classification = classification
-        y = self.y
         if self.classification:
-            y[y != 0] = 1
-            y = y.squeeze()
-            self.y = y.long()
+            self.y[self.y != 0] = 1
+            self.y = (self.y.squeeze()).long()
         else:
-            self.y = torch.log(self.y + 1)
-            self.y = (self.y - torch.mean(self.y)) / torch.std(self.y)
-            # self.y = self.y / torch.std(self.y)
+            # index = (self.y!=0).squeeze()
+            # self.y, self.x = self.y[index], self.x[index]
+            # self.y = torch.log(10*self.y + 1)
+            self.z = None
+        if device is not None:
+            self.to(device)
 
-    def base(self, y_base):
-        if self.classification:
-            criterion = nn.CrossEntropyLoss()
-            y_base_ = torch.tensor([[y_base, 1 - y_base]], device=self.y.device)
-            return criterion(torch.cat(self.y.shape[0]*[y_base_]), self.y).tolist()
-        else:
-            criterion = nn.MSELoss()
-            return criterion(y_base * torch.ones(self.y.shape, device=self.y.device), self.y).tolist()
-
-    def lm_fit(self, alphas=np.logspace(-2, 4, 7)):
-        return lm.RidgeCV(cv=5, alphas=alphas).fit(self.x.cpu().numpy(), self.y.cpu().numpy().reshape(self.y.shape[0]))
-        # return lm.LassoCV(alphas=alphas).fit(self.x.cpu().numpy(), self.y.cpu().numpy().reshape(self.y.shape[0]))
-        # return lm.LinearRegression().fit(self.x.cpu().numpy(), self.y.cpu().numpy())
-
-    def lm_pred(self, model):
-        criterion = nn.CrossEntropyLoss() if self.classification else nn.MSELoss()
-        y_hat = torch.from_numpy(model.predict(self.x.cpu().numpy()).reshape(self.y.shape)).to(self.y.device)
-        return criterion(y_hat, self.y).tolist()
+    def base(self):
+        y_base = torch.mean(self.y.double())
+        
+        def model_base(self, y_base=y_base):
+            if self.classification:
+                y_base_ = torch.tensor([[y_base, 1 - y_base]], device=self.y.device)
+                return torch.cat(self.y.shape[0]*[y_base_])
+            else:
+                return y_base * torch.ones(self.y.shape, device=self.y.device)
+        return model_base
 
     def loss(self, model):
         criterion = nn.CrossEntropyLoss() if self.classification else nn.MSELoss()
-        return criterion(model(self), self.y).tolist()
+        return criterion(model(self), self.y)
+
+    def to_df(self, model, method, trainset):
+        if method == "Base":
+            return pd.DataFrame(data={'method': ["Base"], 'pen': [1.0],
+                                      'train': [trainset.loss(model).tolist()],
+                                      'test': [self.loss(model).tolist()]})
+        return pd.DataFrame(data={'method': [method], 'pen': [model.lamb],
+                                  'train': [trainset.loss(model).tolist()],
+                                  'test': [self.loss(model).tolist()]})
 
 
 class Dataset1(Dataset):
-    def __init__(self, name="CHRNA5", name_data=None):
-        if type(name) is list:
-            x = [pd.read_csv("../../Data/" + name_ + "/g_" + name_data + ".csv", index_col=0) for name_ in name]
+    def __init__(self, gene, data="ukb", race=None, target=None):
+        folder = os.path.join("..", "..", "Data", data, "")
+        x = pd.read_csv(folder + "/g_" + gene + ".csv", index_col=0)
+        yz = pd.read_csv(folder + "Y.csv", index_col=0)
+        if race is not None:
+            if race//10 == 0:
+                race_index = (yz.loc[:, 'eth_org']//1000 == race)
+            else:
+                race_index = (yz.loc[:, 'eth_org'] == race)
+            yz = yz.loc[race_index, :]
+        if (target is not None) and (data != target):
+            experience = os.path.join("..", "..", "Data", target, "",
+                                      "/g_" + gene + ".csv")
+            x = x[pd.read_csv(experience, index_col=0).columns.values]
         else:
-            x = pd.read_csv("../../Data/" + name + "/g_" + name_data + ".csv", index_col=0)
-        if name_data in {'ea', 'aa'}:
-            name_data = "sage"
-        z = pd.read_csv("../../Data/Phe/x_" + name_data + ".csv", index_col=0)
-        z[['age']] = (z[['age']] - 13) / 70
-        y = pd.read_csv("../../Data/Phe/y_" + name_data + ".csv", index_col=0)
-        iid = np.intersect1d(z.index.values, y.index.values)
-        if type(x) is list:
-            for x_ in x:
-                iid = np.intersect1d(iid, x_.index.values)
-        else:
-            iid = np.intersect1d(iid, x.index.values)
-        z, y = torch.from_numpy(z.loc[iid].values).double(), torch.from_numpy(y.loc[iid].values).double()
-        if type(x) is list:
-            x = [torch.from_numpy(x_.loc[iid].values).double() for x_ in x]
-        else:
-            x = torch.from_numpy(x.loc[iid].values).double()
-        super().__init__(data=[y, x, z])
-
-
-class Dataset2(Dataset):
-    def __init__(self, name="CHRNA5"):
-        x = pd.read_csv("../../Data/" + name + "/g.csv", index_col=0)
+            x = x.loc[:, x.isnull().sum()/x.shape[0] < 0.01]
+        imp_mean = SimpleImputer(missing_values=np.nan, strategy='mean')
+        imp_mean.fit(x)
+        x = pd.DataFrame(data=imp_mean.transform(x.values),
+                         index=x.index, columns=x.columns)
+        #x = x.dropna()
+        iid = np.intersect1d(yz.index.values, x.index.values)
+        x = x.loc[iid, :]
+        yz.loc[:, 'age'] = (yz.loc[:, 'age'] - 13) / 70
+        z = yz.loc[iid, ['sex', 'age']]
+        y = yz.loc[iid, ['smk']]
+        z, y = torch.from_numpy(z.values).double(), torch.from_numpy(y.values).double()
         x = torch.from_numpy(x.values).double()
-        z = pd.read_csv("../../Data/Phe/x.csv", index_col=0)
-        y = pd.read_csv("../../Data/Phe/y.csv", index_col=0)
-
-        z[['age_int']] = (z[['age_int']] - 13) / 70
-        z = z[['race', 'sex', 'age_int']]
-        z = torch.from_numpy(z.values).double()
-        y = torch.from_numpy(y.values).double()
         super().__init__(data=[y, x, z])

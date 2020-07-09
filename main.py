@@ -2,93 +2,49 @@
 # coding: utf-8
 import os
 import torch
-import numpy as np
-import pandas as pd
 
 from data import Dataset1
-from models import ModelA, ModelC, MyEnsemble
+from net import Layer, MyEnsemble
 
 
-def main(seed_index, name="CHRNA5", name_data="ea", hidden_units=4):
+def main(seed_index, gene, data="ukb", hidden_units=[8]):
     torch.set_default_tensor_type(torch.DoubleTensor)
-    if name is None:
-        name = ["CHRNA5", "CHRNA3", "CHRNA6", "CHRNB3", "CHRNB4"]
     classification = False
-    out_dim = 1 + classification
-    if name_data == "sage":
-        device = torch.device("cpu")
-        dataset = Dataset1(name, name_data="aa")
-        dataset.to(device)
-        dataset.process(classification)
-        dataset.z = None
-        dataset_old = Dataset1(name, name_data="ea")
-        dataset_old.to(device)
-        dataset_old.process(classification)
-        dataset_old.z = None
-        path_output = "../Output_nn/SAGE/"
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    if data == "ukb":
+        dataset = Dataset1(gene, data=data, race=4002)
     else:
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        dataset = Dataset1(name, name_data=name_data)
-        dataset.to(device)
-        dataset.process(classification)
-        dataset.z = None
-        dataset_old = Dataset1(name, name_data="ukb")
-        dataset_old.to(device)
-        # dataset_old.x = dataset_old.x[(dataset_old.y!=0).reshape(dataset_old.y.shape[0])]
-        # dataset_old.y = dataset_old.y[(dataset_old.y!=0).reshape(dataset_old.y.shape[0])]
-        dataset_old.process(classification)
-        dataset_old.z = None
-        path_output = "../Output_nn/" + name_data + "/"       
-
-    dataset_train, dataset_test = dataset.split_seed(seed_index)
-    path_output += ("All" if type(name) is list else name) + "/"
-    in_dim = [x_.shape[1] for x_ in dataset.x] if type(dataset.x) is list else dataset.x.shape[1]
-
-    if not os.path.exists(path_output + str(seed_index) + ".csv"):
-        os.makedirs(path_output, exist_ok=True)
-    y_base = torch.mean(dataset_train.y)
-    res = pd.DataFrame(data={'method': ["Base"], 'pen': [1.0],
-                             'train': [dataset_train.base(y_base)], 'test': [dataset_test.base(y_base)]})
-
-    torch.manual_seed(seed_index)
-    model_a = ModelA(in_dim, hidden_units)
-    model_c = ModelC([hidden_units] * len(dataset.x) if type(dataset.x) is list else hidden_units, out_dim)
-    net = MyEnsemble(model_a, model_c).to(device)
-    net_nn, lamb_nn = net.ann(dataset_train, np.logspace(-3, 3, 7))
-    res = res.append(pd.DataFrame(data={'method': ["NN"], 'pen': [lamb_nn],
-                                        'train': [dataset_train.loss(net_nn)], 'test': [dataset_test.loss(net_nn)]}))
-
-    # net_ml, lamb = net.ann(dataset_train, lamb_hyper, dataset_old)
-    # res = res.append(pd.DataFrame(data={'method': ["ML"], 'pen': [lamb],
-    #                                     'train': [dataset_train.loss(net_ml)], 'test': [dataset_test.loss(net_ml)]}))
-
-    folder_model = "../Models/" + name + "/"
-    model_name = str(hidden_units) + ".md"
+        dataset = Dataset1(gene, data=data)
+    dataset.process(classification, device)
+    trainset, testset = dataset.split_seed(seed_index)
+    dims = [dataset.x.shape[1]] + hidden_units + [1 + classification]
+    res = testset.to_df(trainset.base(), "Base", trainset)
+    net = MyEnsemble(
+        [Layer(dims[i], dims[i+1]) for i in range(len(dims)-1)]).to(device)
+    net_nn = net.ann(trainset, [10**(x/2) for x in range(-5, 1)])
+    res = res.append(testset.to_df(net_nn, "NN", trainset))
+    folder_model = os.path.join("..", "Models", data, "")
+    model_name = gene + "_" + str("_".join(str(x) for x in hidden_units)) + ".md"
     if os.path.exists(folder_model + model_name):
         net_old = torch.load(folder_model + model_name, map_location=device)
         net_old.eval()
     else:
-        torch.manual_seed(0)
-        net_old, lamb = net.ann(dataset_old, np.logspace(-5, -3.5, 4))
+        oldset = Dataset1(gene, data="ukb", race=1001, target=data)
+        oldset.process(classification, device)
+        net_old = net.ann(oldset, [10**(x/2) for x in range(-7, -1)])
         i = 0
         while hasattr(net_old, 'model' + str(i+1)):
             for param in getattr(net_old, 'model' + str(i)).parameters():
                 param.requires_grad = False
+            i += 1
         os.makedirs(folder_model, exist_ok=True)
         torch.save(net_old, folder_model + model_name)
 
-    net_tl, lamb = net_old.ann(dataset_train, np.logspace(-4, 2, 7))
-    res = res.append(pd.DataFrame(data={'method': ["TL"], 'pen': [lamb],
-                                        'train': [dataset_train.loss(net_tl)], 'test': [dataset_test.loss(net_tl)]}))
-    
-    dataset_train.x = torch.sigmoid(net_old.model0(dataset_train.x))
-    dataset_test.x = torch.sigmoid(net_old.model0(dataset_test.x))
-    model_tl = dataset_train.lm_fit()
-    res = res.append(pd.DataFrame(data={'method': ["LM"], 'pen': [model_tl.alpha_],
-                                        'train': [dataset_train.lm_pred(model_tl)],
-                                        'test': [dataset_test.lm_pred(model_tl)]}))
-
+    net_tl = net_old.ann(trainset, [10**(x/2) for x in range(-7, -1)])
+    res = res.append(testset.to_df(net_tl, "TL", trainset))
+    path_output = os.path.join("..", "Output_nn", data, gene, "")
     os.makedirs(path_output, exist_ok=True)
     res.to_csv(path_output + str(seed_index) + ".csv", index=False)
     print(res)
     return
+
