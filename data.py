@@ -38,58 +38,46 @@ class Dataset:
         else:
             # index = (self.y!=0).squeeze()
             # self.y, self.x = self.y[index], self.x[index]
-            # self.y = torch.log(10*self.y + 1)
             self.z = None
         if device is not None:
             self.to(device)
-
-    def base(self):
-        y_base = torch.mean(self.y.double())
-        
-        def model_base(self, y_base=y_base):
-            if self.classification:
-                y_base_ = torch.tensor([[y_base, 1 - y_base]], device=self.y.device)
-                return torch.cat(self.y.shape[0]*[y_base_])
-            else:
-                return y_base * torch.ones(self.y.shape, device=self.y.device)
-        return model_base
 
     def loss(self, model):
         criterion = nn.CrossEntropyLoss() if self.classification else nn.MSELoss()
         return criterion(model(self), self.y)
 
-    def to_df(self, model, method, trainset):
-        if method == "Base":
-            return pd.DataFrame(data={'method': ["Base"], 'pen': [1.0],
-                                      'train': [trainset.loss(model).tolist()],
-                                      'test': [self.loss(model).tolist()]})
+    def to_df(self, model, method):
         return pd.DataFrame(data={'method': [method], 'pen': [model.lamb],
-                                  'train': [trainset.loss(model).tolist()],
+                                  'train': [model.loss],
                                   'test': [self.loss(model).tolist()]})
 
 
 class Dataset1(Dataset):
     def __init__(self, gene, data="ukb", race=None, target=None):
         folder = os.path.join("..", "..", "Data", data, "")
-        x = pd.read_csv(folder + "/g_" + gene + ".csv", index_col=0)
+        x = pd.read_csv(folder + "g_" + gene + ".csv", index_col=0)
         yz = pd.read_csv(folder + "Y.csv", index_col=0)
         if race is not None:
             if race//10 == 0:
-                race_index = (yz.loc[:, 'eth_org']//1000 == race)
+                race_index = (yz.loc[:, 'eth_org']//1000 == race) | (yz.loc[:, 'eth_org'] == race)
             else:
                 race_index = (yz.loc[:, 'eth_org'] == race)
             yz = yz.loc[race_index, :]
         if (target is not None) and (data != target):
-            experience = os.path.join("..", "..", "Data", target, "",
-                                      "/g_" + gene + ".csv")
+            experience = os.path.join("..", "..", "Data", target,
+                                      "g_" + gene + ".csv")
             x = x[pd.read_csv(experience, index_col=0).columns.values]
+            # index_positive = (yz[['smk']].values > 0)
+            # yz = yz.loc[index_positive]
         else:
             x = x.loc[:, x.isnull().sum()/x.shape[0] < 0.01]
-        imp_mean = SimpleImputer(missing_values=np.nan, strategy='mean')
-        imp_mean.fit(x)
-        x = pd.DataFrame(data=imp_mean.transform(x.values),
-                         index=x.index, columns=x.columns)
-        #x = x.dropna()
+        if target is None:  # dataset
+            imp_mean = SimpleImputer(missing_values=np.nan, strategy='mean')
+            imp_mean.fit(x)
+            x = pd.DataFrame(data=imp_mean.transform(x.values),
+                             index=x.index, columns=x.columns)
+        else:  # oldset
+            x = x.dropna()
         iid = np.intersect1d(yz.index.values, x.index.values)
         x = x.loc[iid, :]
         yz.loc[:, 'age'] = (yz.loc[:, 'age'] - 13) / 70
@@ -98,3 +86,46 @@ class Dataset1(Dataset):
         z, y = torch.from_numpy(z.values).double(), torch.from_numpy(y.values).double()
         x = torch.from_numpy(x.values).double()
         super().__init__(data=[y, x, z])
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.to(device)
+        self.z = None
+
+
+# class Dataset2(Dataset):
+#     def __init__(self, gene, data="mice", target=None):
+#         folder = os.path.join("..", "..", "Data", data, "")
+#         x = pd.read_csv(folder + str(gene) + ".csv", index_col=0)
+#         yz = pd.read_csv(folder + "Y.csv", index_col=0)
+#         if (target is not None) and (data != target):
+#             experience = os.path.join("..", "..", "Data", target, str(gene)+".csv")
+#             x = x[pd.read_csv(experience, index_col=0).columns.values]
+#         iid = np.intersect1d(yz.index.values, x.index.values)
+#         x = x.loc[iid, :]
+#         z = yz.loc[iid, ['sex']]
+#         y = yz.loc[iid, ['weight']]
+#         z, y = torch.from_numpy(z.values).double(), torch.from_numpy(y.values).double()
+#         x = torch.from_numpy(x.values).double()
+#         super().__init__(data=[y, x, z])
+#         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+#         self.to(device)
+#         self.z = None
+
+
+class Dataset2(Dataset):
+    def __init__(self, gene="CHRNA5", data=None):
+        if data == "sage":
+            x = pd.read_csv("../../Data_old/" + gene + "/g_ea.csv", index_col=0)
+        else:
+            x = pd.read_csv("../../Data_old/" + gene + "/g_ukb.csv", index_col=0)
+        z = pd.read_csv("../../Data_old/Phe/x_" + data + ".csv", index_col=0)
+        y = pd.read_csv("../../Data_old/Phe/y_" + data + ".csv", index_col=0)
+        iid = np.intersect1d(z.index.values, y.index.values)
+        iid = np.intersect1d(iid, x.index.values)
+        z, y, x = z.loc[iid], y.loc[iid], x.loc[iid]
+        x = torch.from_numpy(x.values).double()
+        z = torch.from_numpy(z.values).double()
+        y = torch.from_numpy(y.values).double()
+        super().__init__(data=[y, x, z])
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.to(device)
+        self.z = None
