@@ -1,10 +1,12 @@
-import torch
 import copy
 import os
-import torch.nn as nn
-import torch.optim as optim
-import numpy as np
+
 import pandas as pd
+import torch
+from torch import nn as nn
+from torch import optim as optim
+
+from data import DiscreteData2, FunctionalData2
 
 
 class Solution:
@@ -22,7 +24,7 @@ class Solution:
         valid = [validset.loss(self.hyper_train(trainset, decay)).tolist()
                  for decay in lamb]
         print(valid)
-        lamb_opt = lamb[np.argmin(np.array(valid))]
+        lamb_opt = lamb[torch.argmin(torch.FloatTensor(valid))]
         return self.hyper_train(dataset, lamb_opt)
 
     def to_df(self, testset, method):
@@ -35,7 +37,7 @@ class Linear(Solution):
     def __init__(self, dataset=None, base=False, lamb=None):
         super(Linear, self).__init__()
         if lamb is None:
-            lamb = [1.0]
+            lamb = [10 ** x for x in range(-4, 4)]
         self.base = base
         self.beta = None
         if dataset is not None:
@@ -63,7 +65,8 @@ class Linear(Solution):
         if not self.base:
             x = dataset.x
             self.scalar_mean = torch.mean(x, 0)
-            self.scalar_std = torch.std(x, 0)
+            # self.scalar_std = torch.std(x, 0)
+            self.scalar_std = torch.ones(x.shape[1], device=x.device)
             x = (x-self.scalar_mean)/self.scalar_std
             x_t = x.transpose(0, 1)
             mat = torch.eye(x.shape[1], device=dataset.x.device)
@@ -112,3 +115,27 @@ class Net(nn.Module, Solution):
                 i += 1
         os.makedirs(folder, exist_ok=True)
         torch.save(self, folder + name)
+
+    def pre_train(self, name, gene):
+        method = self.__class__.__name__
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        dir_pre = os.path.join("..", "Models", method, "")
+        if os.path.exists(dir_pre + name):
+            net_pre = torch.load(dir_pre + name, map_location=device)
+            net_pre.eval()
+        else:
+            if method == "DNN":
+                # oldset = DiscreteData1(gene, data="ukb", race=1001,
+                #                        target=data)
+                oldset = DiscreteData2(gene, data="ukb")
+                net_pre = self.hyper_train(oldset,
+                                          [10 ** (x / 2) for x in
+                                           range(-8, -4)])
+            if method == "FDNN":
+                oldset = FunctionalData2(gene, data="ukb")
+                net_pre = self.hyper_train(oldset,
+                                          [10 ** x for x in range(-6, -3)])
+            net_pre.save(dir_pre, name, 1)
+        return net_pre
+
+

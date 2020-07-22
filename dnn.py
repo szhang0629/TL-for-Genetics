@@ -1,6 +1,8 @@
 import copy
+
 import torch
-import torch.nn as nn
+from torch import nn as nn
+
 from solution import Net
 
 

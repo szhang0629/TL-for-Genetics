@@ -1,15 +1,16 @@
 import os
+
 import numpy as np
 import pandas as pd
-import torch
 from sklearn.impute import SimpleImputer
+
 from dataset import DiscreteData, FunctionalData
 
 
 class DiscreteData1(DiscreteData):
     def __init__(self, gene, data="ukb", race=None, target=None):
         folder = os.path.join("..", "Data", data, "")
-        x = pd.read_csv(folder + "g_" + gene + ".csv", index_col=0)
+        x = pd.read_csv(folder + gene + ".csv", index_col=0)
         yz = pd.read_csv(folder + "Y.csv", index_col=0)
         if race is not None:
             if race//10 == 0:
@@ -20,8 +21,7 @@ class DiscreteData1(DiscreteData):
                 race_index = (yz.loc[:, 'eth_org'] == race)
             yz = yz.loc[race_index, :]
         if (target is not None) and (data != target):
-            experience = os.path.join("..", "Data", target,
-                                      "g_" + gene + ".csv")
+            experience = os.path.join("..", "Data", target, gene + ".csv")
             x = x[pd.read_csv(experience, index_col=0).columns.values]
             # index_positive = (yz[['smk']].values > 0)
             # yz = yz.loc[index_positive]
@@ -39,9 +39,6 @@ class DiscreteData1(DiscreteData):
         yz.loc[:, 'age'] = (yz.loc[:, 'age'] - 13) / 70
         z = yz.loc[iid, ['sex', 'age']]
         y = yz.loc[iid, ['smk']]
-        y = torch.from_numpy(y.values).double()
-        x = torch.from_numpy(x.values).double()
-        z = torch.from_numpy(z.values).double()
         super().__init__(data=[y, x, z])
         self.process()
 
@@ -57,9 +54,6 @@ class DiscreteData2(DiscreteData):
         iid = np.intersect1d(z.index.values, y.index.values)
         iid = np.intersect1d(iid, x.index.values)
         z, y, x = z.loc[iid], y.loc[iid], x.loc[iid]
-        y = torch.from_numpy(y.values).double()
-        x = torch.from_numpy(x.values).double()
-        z = torch.from_numpy(z.values).double()
         super().__init__(data=[y, x, z])
         self.process()
 
@@ -91,15 +85,12 @@ class FunctionalData1(FunctionalData):
                              index=x.index, columns=x.columns)
         else:  # oldset
             x = x.dropna()
-        pos = np.asarray(x.columns.astype('int'))
-        pos = (pos - min(pos)) / (max(pos) - min(pos))
         iid = np.intersect1d(x.index.values, yz.index.values)
         z, y, x = yz.loc[iid, ['sex', 'age']], yz.loc[iid, ['smk']], x.loc[iid]
+        pos = np.asarray(x.columns.astype('int'))
+        pos = (pos - min(pos)) / (max(pos) - min(pos))
         loc = z[['age']].to_numpy().ravel()
         loc = (loc - 13) / 70
-        x = torch.from_numpy(x.values).double()
-        z = torch.from_numpy(z.values).double()
-        y = torch.from_numpy(y.values).double()
         super().__init__(data=[y, x, z, pos, loc])
         self.process(classification=False)
 
@@ -110,17 +101,14 @@ class FunctionalData2(FunctionalData):
             x = pd.read_csv("../Data_old/" + gene + "/g_ea.csv", index_col=0)
         else:
             x = pd.read_csv("../Data_old/" + gene + "/g_ukb.csv", index_col=0)
-        pos = np.asarray(x.columns.astype('int'))
-        pos = (pos - min(pos)) / (max(pos) - min(pos))
         z = pd.read_csv("../Data_old/Phe/x_" + data + ".csv", index_col=0)
         y = pd.read_csv("../Data_old/Phe/y_" + data + ".csv", index_col=0)
         iid = np.intersect1d(z.index.values, y.index.values)
         iid = np.intersect1d(iid, x.index.values)
         z, y, x = z.loc[iid], y.loc[iid], x.loc[iid]
+        pos = np.asarray(x.columns.astype('int'))
+        pos = (pos - min(pos)) / (max(pos) - min(pos))
         loc = z[['age']].to_numpy().ravel()
         loc = (loc - 13) / 70
-        x = torch.from_numpy(x.values)
-        z = torch.from_numpy(z.values)
-        y = torch.from_numpy(y.values)
         super().__init__(data=[y, x, z, pos, loc])
         self.process(classification=False)

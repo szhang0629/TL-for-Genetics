@@ -1,34 +1,53 @@
 import numpy as np
 import torch
-import torch.nn as nn
+
+from skfda.representation.basis import BSpline, Fourier
+from torch import nn as nn
+
 from solution import Net
 
 
+class Basis:
+    def __init__(self, n_basis):
+        self.n_basis = n_basis
+        self.bss = Fourier((0, 1), n_basis=n_basis, period=2)
+        pen0 = self.bss.gram_matrix() * 2
+        vec = np.append(0.5, np.repeat(np.arange(1, n_basis//2+1), 2))
+        vec = vec.reshape(n_basis, 1)
+        gram = vec @ vec.T
+        self.pen0 = torch.from_numpy(pen0).float()
+        self.pen2 = torch.from_numpy(pen0 * gram).float()
+        self.mat = None
+        bs0 = Fourier((0, 1), n_basis=1, period=1)
+        self.integral = \
+            torch.from_numpy(self.bss.inner_product(bs0)).float() * (2**0.5)
+
+    def evaluate(self, point):
+        self.mat = torch.from_numpy(self.bss.evaluate(point).T).float() * \
+                   (2**0.5)
+
+    def to(self, device):
+        self.mat = self.mat.to(device)
+        self.pen0 = self.pen0.to(device)
+        self.pen2 = self.pen2.to(device)
+        self.integral = self.integral.to(device)
+
+
 class MyModelB(nn.Module):
-    def __init__(self, bs0, bs1):
-        self.bs0, self.b0 = bs0, None
-        # self.p0_0 = torch.from_numpy(bs0.penalty(0)) * bs0.n_basis
-        # self.p2_0 = torch.from_numpy(bs0.penalty(2)) * bs0.n_basis / 100 \
-        #             + self.p0_0 * 0.05
-        self.p0_0 = torch.from_numpy(bs0.penalty(0)) * 2
-        self.p2_0 = torch.from_numpy(bs0.penalty(2)) * 2
-        self.bs1, self.b1 = bs1, None
-        # self.p0_1 = torch.from_numpy(bs1.penalty(0)) * bs1.n_basis
-        # self.p2_1 = torch.from_numpy(bs1.penalty(2)) * bs1.n_basis / 100 \
-        #             + self.p0_1 * 0.05
-        self.p0_1 = torch.from_numpy(bs0.penalty(0)) * 2
-        self.p2_1 = torch.from_numpy(bs0.penalty(2)) * 2
+    def __init__(self, n_basis_0, n_basis_1):
+        self.bs0, self.bs1 = Basis(n_basis_0), Basis(n_basis_1)
         self.index = None
+        torch.manual_seed(0)
         super(MyModelB, self).__init__()
         self.fc0 = nn.Linear(self.bs0.n_basis, self.bs1.n_basis)
 
     def forward(self, x):
-        x = self.fc0((x @ self.b0) / self.b0.shape[0])
+        x = self.fc0((x @ self.bs0.mat) / self.bs0.mat.shape[0])
         if self.index is None:
-            return x @ self.b1.t()
+            return x @ self.bs1.mat.t()
         if self.index is not -1:
             x = x[self.index]
-        x = x * self.b1
+        x = x * self.bs1.mat
         return torch.sum(x, 1, keepdim=True)
 
 
@@ -57,25 +76,17 @@ class FDNN(Net):
         i = 0
         while hasattr(self, 'model' + str(i)):
             model = getattr(self, 'model' + str(i))
-            point = dataset.pos if i == 0 else np.arange(0.005, 1, 0.01)
-            # model.b0 = torch.from_numpy(model.bs0.evaluate(point).T) * \
-            #            (model.bs0.n_basis ** 0.5)
-            model.b0 = torch.from_numpy(model.bs0.evaluate(point).T) * (2**0.5)
-            model.b0 = model.b0.to(device)
-            model.p0_0, model.p2_0 = model.p0_0.to(device), \
-                                     model.p2_0.to(device)
-            point = None if hasattr(self, 'model' + str(i + 1)) else dataset.loc
-            if point is None:
+            pos = dataset.pos if i == 0 else np.arange(0.005, 1, 0.01)
+            model.bs0.evaluate(pos)
+            model.bs0.to(device)
+            loc = None if hasattr(self, 'model' + str(i + 1)) else dataset.loc
+            if loc is None:
                 model.index = None
-                point = np.arange(0.005, 1, 0.01)
+                loc = np.arange(0.005, 1, 0.01)
             else:
                 model.index = -1
-            # model.b1 = torch.from_numpy(model.bs1.evaluate(point).T) * \
-            #            (model.bs1.n_basis ** 0.5)
-            model.b1 = torch.from_numpy(model.bs1.evaluate(point).T) * (2**0.5)
-            model.b1 = model.b1.to(device)
-            model.p0_1, model.p2_1 = model.p0_1.to(device), \
-                                     model.p2_1.to(device)
+            model.bs1.evaluate(loc)
+            model.bs1.to(device)
             i += 1
 
     def fit_init(self, dataset):
@@ -95,16 +106,22 @@ class FDNN(Net):
             model = getattr(self, 'model' + str(i))
             for name, param in model.named_parameters():
                 if param.requires_grad and "fc" in name:
-                    if "weight" in name:
-                        penalty += torch.trace(
-                            (model.p0_0 @ ((param @ model.p2_1)
-                                           @ param.t()))) * 0.5
-                        penalty += torch.trace(
-                            (model.p0_1 @ ((param.t() @ model.p2_0)
-                                           @ param))) * 0.5
-                    if "bias" in name:
-                        penalty += torch.trace(
-                            (torch.unsqueeze(param, 0) @ model.p2_1) @
-                            torch.unsqueeze(param, 1))
+                    if name.endswith(".weight"):
+                        mean = torch.sum(param * (model.bs0.integral.t() @
+                                                  model.bs1.integral))
+                        var = torch.trace((model.bs0.pen0 @
+                                           ((param @ model.bs1.pen0) @
+                                            param.t()))) - (mean ** 2)
+                        pen = torch.trace(model.bs0.pen0 @
+                                          ((param @ model.bs1.pen2) @
+                                           param.t()) + model.bs1.pen0 @
+                                          ((param.t() @ model.bs0.pen2) @
+                                           param)) * 0.5
+                        penalty += pen / var
+                    if name.endswith(".bias"):
+                        pen = param @ model.bs1.pen2 @ param
+                        mean = param @ model.bs1.integral
+                        var = param @ model.bs1.pen0 @ param - mean @ mean
+                        penalty += pen /var
             i += 1
         return penalty

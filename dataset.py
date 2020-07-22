@@ -1,12 +1,19 @@
 import random
+
 import torch
-import torch.nn as nn
+from torch import nn as nn
 
 
 class Dataset:
     def __init__(self, y, x, z, classification=False):
         self.classification = classification
         self.y, self.x, self.z = y, x, z
+
+    def to_tensor(self):
+        self.y = torch.from_numpy(self.y.values).float()
+        self.x = torch.from_numpy(self.x.values).float()
+        if self.z is not None:
+            self.z = torch.from_numpy(self.z.values).float()
 
     def to(self, device):
         self.y, self.x = self.y.to(device), self.x.to(device)
@@ -20,6 +27,7 @@ class Dataset:
 
     def process(self, classification=False):
         self.classification = classification
+        self.to_tensor()
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         if classification:
             self.y[self.y != 0] = 1
@@ -59,7 +67,6 @@ class FunctionalData(Dataset):
         super().__init__(y, x, z, classification=classification)
 
     def split(self, seq):
-        device = self.y.device
         res = []
         for seq_ in seq:
             if self.z is None:
@@ -69,6 +76,5 @@ class FunctionalData(Dataset):
             res_ = FunctionalData([self.y[seq_], self.x[seq_], z_, self.pos,
                                    self.loc[seq_]],
                                   classification=self.classification)
-            res_.to(device)
             res.append(res_)
         return res
