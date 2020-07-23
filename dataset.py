@@ -5,9 +5,10 @@ from torch import nn as nn
 
 
 class Dataset:
-    def __init__(self, y, x, z, classification=False):
+    def __init__(self, data, classification=False):
+        # torch.set_default_tensor_type(torch.DoubleTensor)
         self.classification = classification
-        self.y, self.x, self.z = y, x, z
+        self.y, self.x, self.z, self.pos = data
 
     def to_tensor(self):
         self.y = torch.from_numpy(self.y.values).float()
@@ -28,53 +29,16 @@ class Dataset:
     def process(self, classification=False):
         self.classification = classification
         self.to_tensor()
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
         if classification:
             self.y[self.y != 0] = 1
             self.y = self.y.squeeze()
             self.y = self.y.long()
         else:
             # self.y = torch.log(self.y + 1)
-            self.to(device)
             self.z = None
 
     def loss(self, model):
         criterion = nn.CrossEntropyLoss() if self.classification \
             else nn.MSELoss()
         return criterion(model(self), self.y)
-
-
-class DiscreteData(Dataset):
-    def __init__(self, data, classification=False):
-        y, x, z = data
-        super().__init__(y, x, z, classification=classification)
-
-    def split(self, seq):
-        res = []
-        for seq_ in seq:
-            if self.z is None:
-                z_ = None
-            else:
-                z_ = self.z[seq_]
-            res_ = DiscreteData(data=[self.y[seq_], self.x[seq_], z_])
-            res.append(res_)
-        return res
-
-
-class FunctionalData(Dataset):
-    def __init__(self, data, classification=False):
-        y, x, z, self.pos, self.loc = data
-        super().__init__(y, x, z, classification=classification)
-
-    def split(self, seq):
-        res = []
-        for seq_ in seq:
-            if self.z is None:
-                z_ = None
-            else:
-                z_ = self.z[seq_]
-            res_ = FunctionalData([self.y[seq_], self.x[seq_], z_, self.pos,
-                                   self.loc[seq_]],
-                                  classification=self.classification)
-            res.append(res_)
-        return res

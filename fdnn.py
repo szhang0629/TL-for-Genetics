@@ -18,6 +18,7 @@ class Basis:
         self.pen0 = torch.from_numpy(pen0).float()
         self.pen2 = torch.from_numpy(pen0 * gram).float()
         self.mat = None
+        self.length = None
         bs0 = Fourier((0, 1), n_basis=1, period=1)
         self.integral = \
             torch.from_numpy(self.bss.inner_product(bs0)).float() * (2**0.5)
@@ -42,7 +43,7 @@ class MyModelB(nn.Module):
         self.fc0 = nn.Linear(self.bs0.n_basis, self.bs1.n_basis)
 
     def forward(self, x):
-        x = self.fc0((x @ self.bs0.mat) / self.bs0.mat.shape[0])
+        x = self.fc0((x @ self.bs0.mat) / self.bs0.length)
         if self.index is None:
             return x @ self.bs1.mat.t()
         if self.index is not -1:
@@ -52,13 +53,11 @@ class MyModelB(nn.Module):
 
 
 class FDNN(Net):
-    def __init__(self, *args):
+    def __init__(self, models):
         self.realize = False
         super(FDNN, self).__init__()
-        i = 0
-        for arg in args:
-            setattr(self, "model" + str(i), arg)
-            i += 1
+        for i in range(len(models)):
+            setattr(self, "model" + str(i), models[i])
 
     def forward(self, dataset):
         if not self.realize:
@@ -76,15 +75,26 @@ class FDNN(Net):
         i = 0
         while hasattr(self, 'model' + str(i)):
             model = getattr(self, 'model' + str(i))
-            pos = dataset.pos if i == 0 else np.arange(0.005, 1, 0.01)
+            if i == 0:
+                pos = dataset.pos
+                pos0 = dataset.pos0 if hasattr(dataset, 'pos0') else min(pos)
+                pos1 = dataset.pos1 if hasattr(dataset, 'pos1') else max(pos)
+                model.bs0.length = pos1 - pos0 + 1
+                pos = (pos - pos0) / (pos1 - pos0)
+            else:
+                pos = np.arange(0.005, 1, 0.01)
+                model.bs0.length = len(pos)
             model.bs0.evaluate(pos)
             model.bs0.to(device)
-            loc = None if hasattr(self, 'model' + str(i + 1)) else dataset.loc
-            if loc is None:
+            if hasattr(self, 'model' + str(i + 1)):
                 model.index = None
                 loc = np.arange(0.005, 1, 0.01)
             else:
                 model.index = -1
+                loc = dataset.loc
+                loc0 = dataset.loc0 if hasattr(dataset, 'loc0') else min(loc)
+                loc1 = dataset.loc1 if hasattr(dataset, 'loc1') else max(loc)
+                loc = (loc - loc0) / (loc1 - loc0)
             model.bs1.evaluate(loc)
             model.bs1.to(device)
             i += 1
@@ -107,21 +117,23 @@ class FDNN(Net):
             for name, param in model.named_parameters():
                 if param.requires_grad and "fc" in name:
                     if name.endswith(".weight"):
-                        mean = torch.sum(param * (model.bs0.integral.t() @
-                                                  model.bs1.integral))
-                        var = torch.trace((model.bs0.pen0 @
-                                           ((param @ model.bs1.pen0) @
-                                            param.t()))) - (mean ** 2)
                         pen = torch.trace(model.bs0.pen0 @
                                           ((param @ model.bs1.pen2) @
                                            param.t()) + model.bs1.pen0 @
                                           ((param.t() @ model.bs0.pen2) @
                                            param)) * 0.5
-                        penalty += pen / var
+                        mean = torch.sum(param * (model.bs0.integral.t() @
+                                                  model.bs1.integral))
+                        var = torch.trace((model.bs0.pen0 @
+                                           ((param @ model.bs1.pen0) @
+                                            param.t()))) - (mean ** 2)
+                        pen = pen / var
+                        penalty += pen
                     if name.endswith(".bias"):
                         pen = param @ model.bs1.pen2 @ param
                         mean = param @ model.bs1.integral
                         var = param @ model.bs1.pen0 @ param - mean @ mean
-                        penalty += pen /var
+                        pen = pen / var
+                        penalty += pen
             i += 1
         return penalty

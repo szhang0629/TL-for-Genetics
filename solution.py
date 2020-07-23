@@ -6,8 +6,6 @@ import torch
 from torch import nn as nn
 from torch import optim as optim
 
-from data import DiscreteData2, FunctionalData2
-
 
 class Solution:
     def __init__(self):
@@ -85,7 +83,7 @@ class Net(nn.Module, Solution):
         cache = copy.deepcopy(self)
         optimizer = optim.Adam(self.parameters())  # , weight_decay=self.lamb)
         risk_min = float('Inf')
-        while True:
+        while self.epoch < 3e5:
             optimizer.zero_grad()
             loss = dataset.loss(self)
             self.loss = loss.tolist()
@@ -98,7 +96,7 @@ class Net(nn.Module, Solution):
                     k = 0
                 if k == 100:
                     break
-                if self.epoch % 1000 == 0:
+                if self.epoch % 10000 == 0:
                     print(self.epoch, self.loss, risk.tolist())
             risk.backward()
             optimizer.step()
@@ -116,26 +114,22 @@ class Net(nn.Module, Solution):
         os.makedirs(folder, exist_ok=True)
         torch.save(self, folder + name)
 
-    def pre_train(self, name, gene):
+    def pre_train(self, name, gene, target):
         method = self.__class__.__name__
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        dir_pre = os.path.join("..", "Models", method, "")
+        dir_pre = os.path.join("..", "Models", method, gene, "")
         if os.path.exists(dir_pre + name):
             net_pre = torch.load(dir_pre + name, map_location=device)
             net_pre.eval()
         else:
             if method == "DNN":
-                # oldset = DiscreteData1(gene, data="ukb", race=1001,
-                #                        target=data)
-                oldset = DiscreteData2(gene, data="ukb")
-                net_pre = self.hyper_train(oldset,
-                                          [10 ** (x / 2) for x in
-                                           range(-8, -4)])
-            if method == "FDNN":
-                oldset = FunctionalData2(gene, data="ukb")
-                net_pre = self.hyper_train(oldset,
-                                          [10 ** x for x in range(-6, -3)])
+                oldset = target.__class__(gene, target=target)
+                net_pre = \
+                    self.hyper_train(oldset,
+                                     [10 ** (x / 2) for x in range(-8, -4)])
+            else:
+                oldset = target.__class__(gene, target=target)
+                net_pre = \
+                    self.hyper_train(oldset, [10 ** x for x in range(-2, 1)])
             net_pre.save(dir_pre, name, 1)
         return net_pre
-
-
