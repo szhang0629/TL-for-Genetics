@@ -4,7 +4,7 @@ import torch
 from skfda.representation.basis import BSpline, Fourier
 from torch import nn as nn
 
-from solution import Net
+from net import Net
 
 
 class Basis:
@@ -12,7 +12,7 @@ class Basis:
         self.n_basis = n_basis
         self.bss = Fourier((0, 1), n_basis=n_basis, period=2)
         pen0 = self.bss.gram_matrix() * 2
-        vec = np.append(0.5, np.repeat(np.arange(1, n_basis//2+1), 2))
+        vec = np.append(0.5, np.repeat(np.arange(1, n_basis//2+1), 2)) ** 2
         vec = vec.reshape(n_basis, 1)
         gram = vec @ vec.T
         self.pen0 = torch.from_numpy(pen0).float()
@@ -20,12 +20,12 @@ class Basis:
         self.mat = None
         self.length = None
         bs0 = Fourier((0, 1), n_basis=1, period=1)
-        self.integral = \
-            torch.from_numpy(self.bss.inner_product(bs0)).float() * (2**0.5)
+        self.integral = torch.from_numpy(
+            self.bss.inner_product_matrix(bs0)).float() * (2**0.5)
 
     def evaluate(self, point):
-        self.mat = torch.from_numpy(self.bss.evaluate(point).T).float() * \
-                   (2**0.5)
+        mat = self.bss.evaluate(point)[:, :, 0]
+        self.mat = torch.from_numpy(mat.T).float() * (2**0.5)
 
     def to(self, device):
         self.mat = self.mat.to(device)
@@ -46,7 +46,7 @@ class MyModelB(nn.Module):
         x = self.fc0((x @ self.bs0.mat) / self.bs0.length)
         if self.index is None:
             return x @ self.bs1.mat.t()
-        if self.index is not -1:
+        if type(self.index) is int:
             x = x[self.index]
         x = x * self.bs1.mat
         return torch.sum(x, 1, keepdim=True)
@@ -56,6 +56,7 @@ class FDNN(Net):
     def __init__(self, models):
         self.realize = False
         super(FDNN, self).__init__()
+        self.hyper_lamb = [10**x for x in range(-1, 3)]
         for i in range(len(models)):
             setattr(self, "model" + str(i), models[i])
 

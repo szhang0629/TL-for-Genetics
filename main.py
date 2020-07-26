@@ -2,52 +2,67 @@
 # coding: utf-8
 import os
 
-from data import Data1
+from dataset import Data1, Data3
 from dnn import DNN, Layer
-from solution import Linear
+from fdnn import FDNN, MyModelB
+from solution import Base, Ridge
 
 
-def main(seed_index, gene="CHRNB3", data="ukb", race=1002, hidden_units=[4]):
+def main(seed_index, gene="CHRNA6"):
+    # data, race = "sage", None
+    data, race = "ukb", 4
+    # data, race = "mice", 0
+    hidden_units = [17]
     str_units = str("_".join(str(x) for x in hidden_units))
     if data == "ukb":
         dataset = Data1(gene, data=data, race=race)
         race = {1002: "irish", 4: "black"}[race]
-        path_output = os.path.join("..", "Output", "DNN",
-                                   data, race, gene, str_units, "")
+        filename = os.path.join("..", "Output", data, race, gene, str_units, "")
     else:
-        dataset = Data1(gene, data=data)
-        path_output = os.path.join("..", "Output", "DNN",
-                                   data, gene, str_units, "")
-    # dataset = Data2(gene, data="sage")
-    # path_output = os.path.join("..", "Output", "nn", "sage", gene, "")
-
+        dataset = Data1(gene, data=data, race=race)
+        # dataset = Data3(gene, data=data)
+        filename = os.path.join("..", "Output", data, gene, str_units, "")
+    filename += str(seed_index) + ".csv"
+    dataset.x = dataset.x * dataset.scale_ratio
     trainset, testset = dataset.split_seed(seed_index)
-    if hidden_units is None:
-        hidden_units = [dataset.x.shape[1]]
-    dims = [dataset.x.shape[1]] + hidden_units + [1 + dataset.classification]
-    # bl: Use mean value as predictor
-    bl = Linear(trainset, True)
-    res = bl.to_df(testset, "Base")
-    # rd: Ridge Regression
-    # rd = Linear(trainset)
-    # res = res.append(rd.to_df(testset, "RD"))
+    device = dataset.x.device
 
-    net = DNN([Layer(dims[i], dims[i + 1]) for i in range(len(dims) - 1)])
-    net = net.to(dataset.y.device)
-    # net_nn: vanilla neural network
-    net_nn = net.hyper_train(trainset, [10 ** (x / 2) for x in range(-7, 3)])
-    res = res.append(net_nn.to_df(testset, "DNN"))
+    bl = Base(trainset)
+    bl.to_csv(testset, filename)
 
-    name_pre = gene + "_" + str_units + ".md"
-    net_pre = net.pre_train(name_pre, gene, data)
-    net_tl = net_pre.hyper_train(trainset,
-                                 [10 ** (x / 2) for x in range(-8, 2)])
-    res = res.append(net_tl.to_df(testset, "TL"))
+    # rd = Ridge(trainset)
+    # rd.to_csv(testset, filename)
+    #
+    # dims = [dataset.x.shape[1]] + hidden_units + [1]
+    # net = DNN([Layer(dims[i], dims[i + 1]) for i in range(len(dims) - 1)])
+    # net = net.to(device)
+    #
+    # net_nn = net.hyper_train(trainset)
+    # net_nn.to_csv(testset, filename)
+    #
+    # name_pre = data + "_" + str_units + ".md"
+    # net_pre = net.pre_train(name_pre, gene, dataset)
+    # net_tl = net_pre.hyper_train(trainset, [10 ** x for x in range(-4, 2)])
+    # net_tl.to_csv(testset, filename, "TL")
+
     # trainset_tl, testset_tl = \
     #     net_pre.transfer(trainset), net_pre.transfer(testset)
-    # lm = Linear(trainset_tl)
-    # res = res.append(lm.to_df(testset_tl, "LM"))
-    os.makedirs(path_output, exist_ok=True)
-    res.to_csv(path_output + str(seed_index) + ".csv", index=False)
-    print(res)
+    # lm = Ridge(trainset_tl)
+    # lm.to_df(testset_tl, filename, "TRD")
+
+    dims = [hidden_units[0]] + hidden_units + [hidden_units[-1]]
+    model_flm = FDNN([MyModelB(dims[0], dims[-1])]).to(device)
+    net_flm = model_flm.hyper_train(trainset)
+    net_flm.to_csv(testset, filename, "FLM")
+
+    net = FDNN([MyModelB(dims[i], dims[i + 1]) for i in range(len(dims) - 1)])
+    net = net.to(device)
+    net_fnn = net.hyper_train(trainset)
+    net_fnn.to_csv(testset, filename)
+    #
+    # name_pre = data + "_" + str_units + ".md"
+    # net_pre = net.pre_train(name_pre, gene, dataset)
+    # net_tl = net_pre.hyper_train(trainset)
+    # net_tl.to_csv(testset, filename, "FTL")
+
     return

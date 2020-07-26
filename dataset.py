@@ -1,44 +1,79 @@
-import random
+import os
 
-import torch
-from torch import nn as nn
+import numpy as np
+import pandas as pd
+from sklearn.impute import SimpleImputer
+from data import Data
 
 
-class Dataset:
-    def __init__(self, data, classification=False):
-        # torch.set_default_tensor_type(torch.DoubleTensor)
-        self.classification = classification
-        self.y, self.x, self.z, self.pos = data
-
-    def to_tensor(self):
-        self.y = torch.from_numpy(self.y.values).float()
-        self.x = torch.from_numpy(self.x.values).float()
-        if self.z is not None:
-            self.z = torch.from_numpy(self.z.values).float()
-
-    def to(self, device):
-        self.y, self.x = self.y.to(device), self.x.to(device)
-        self.z = None if self.z is None else self.z.to(device)
-
-    def split_seed(self, seed=0, split_ratio=0.8):
-        sequence = list(range(self.x.shape[0]))
-        random.Random(seed).shuffle(sequence)
-        point = round(len(sequence) * split_ratio)
-        return self.split([sequence[:point], sequence[point:]])
-
-    def process(self, classification=False):
-        self.classification = classification
-        self.to_tensor()
-        self.to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
-        if classification:
-            self.y[self.y != 0] = 1
-            self.y = self.y.squeeze()
-            self.y = self.y.long()
+class Data1(Data):
+    def __init__(self, gene, data="ukb", race=1001, target=None):
+        folder = os.path.join("..", "Data", data, "")
+        x = pd.read_csv(folder + gene + ".csv", index_col=0)
+        yz = pd.read_csv(folder + "Y.csv", index_col=0)
+        if race is not None:
+            if race//10 == 0:
+                index1 = (yz.loc[:, 'eth_org']//1000 == race)
+                index2 = (yz.loc[:, 'eth_org'] == race)
+                race_index = index1 | index2
+            else:
+                race_index = (yz.loc[:, 'eth_org'] == race)
+            yz = yz.loc[race_index, :]
+        if target is None:
+            x = x.loc[:, x.isnull().sum() / x.shape[0] < 0.01]
+            imp_mean = SimpleImputer(missing_values=np.nan, strategy='mean')
+            imp_mean.fit(x)
+            x = pd.DataFrame(data=imp_mean.transform(x.values),
+                             index=x.index, columns=x.columns)
         else:
-            # self.y = torch.log(self.y + 1)
-            self.z = None
+            x = x[target.pos.astype('str')]
+            x = x.dropna()
+        iid = np.intersect1d(yz.index.values, x.index.values)
+        x = x.loc[iid, :]
+        yz = yz.loc[iid, :]
+        z = yz.loc[:, ['sex', 'age']]
+        y = yz.loc[:, ['smk']]
+        pos = np.asarray(x.columns.astype('int'))
+        loc = z[['age']].to_numpy().ravel()
+        super().__init__(data=[y.values, x.values, z.values, pos, loc])
+        if target is not None:
+            self.scale_ratio = target.scale_ratio
+        else:
+            self.scale_ratio = self.scale_std()
+        if target is None:
+            self.loc0, self.loc1 = min(self.loc), max(self.loc)
+        else:
+            self.loc0, self.loc1 = target.loc0, target.loc1
+        self.process()
 
-    def loss(self, model):
-        criterion = nn.CrossEntropyLoss() if self.classification \
-            else nn.MSELoss()
-        return criterion(model(self), self.y)
+
+class Data3(Data):
+    def __init__(self, gene, data="rat", target=None):
+        folder = os.path.join("..", "Data", data, "")
+        x = pd.read_csv(folder + str(gene) + ".csv", index_col=0)
+        yz = pd.read_csv(folder + "Y.csv", index_col=0)
+        iid = np.intersect1d(yz.index.values, x.index.values)
+        x = x.loc[iid, :]
+        yz = yz.loc[iid, :]
+        y = yz.loc[iid, ['weight']]
+        pos = np.asarray(x.columns.astype('int'))
+        if target is not None:
+            pos = pos[np.where(min(target.pos) <= pos)]
+            pos = pos[np.where(pos <= max(target.pos))]
+            x = x[pos.astype('str')]
+            z = yz.loc[:, ['sex']]
+            z.insert(1, 'age', np.mean(target.loc))
+        else:
+            z = yz.loc[:, ['sex', 'age']]
+            self.pos0, self.pos1 = min(pos), max(pos)
+        loc = z[['age']].to_numpy().ravel()
+        super().__init__(data=[y.values, x.values, z.values, pos, loc])
+        if target is not None:
+            self.scale_ratio = target.scale_ratio
+        else:
+            self.scale_ratio = self.scale_std()
+        if target is None:
+            self.loc0, self.loc1 = min(self.loc), max(self.loc)
+        else:
+            self.loc0, self.loc1 = target.loc0, target.loc1
+        self.process()

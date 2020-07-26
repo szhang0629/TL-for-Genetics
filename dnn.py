@@ -3,7 +3,7 @@ import copy
 import torch
 from torch import nn as nn
 
-from solution import Net
+from net import Net
 
 
 class Layer(nn.Module):
@@ -21,6 +21,7 @@ class Layer(nn.Module):
 class DNN(Net):
     def __init__(self, models):
         super(DNN, self).__init__()
+        self.hyper_lamb = [10 ** x for x in range(-2, 4)]
         for i in range(len(models)):
             setattr(self, "model" + str(i), models[i])
 
