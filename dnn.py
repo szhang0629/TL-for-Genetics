@@ -17,21 +17,28 @@ class Layer(nn.Module):
             x = torch.cat([x, z], 1)
         return self.fc(x)
 
+    def pen(self):
+        penalty = 0
+        for name, param in self.named_parameters():
+            if param.requires_grad and "fc" in name:
+                # and not name.endswith(".bias"):
+                penalty += torch.sum(param ** 2)
+        return penalty
+
 
 class DNN(Net):
     def __init__(self, models):
         super(DNN, self).__init__()
-        self.hyper_lamb = [10 ** x for x in range(-2, 4)]
-        for i in range(len(models)):
+        self.layers = len(models)
+        self.hyper_lamb = [10 ** x for x in range(-1, 3)]
+        for i in range(self.layers):
             setattr(self, "model" + str(i), models[i])
 
     def forward(self, dataset):
         res = self.model0(dataset.x, dataset.z)
-        i = 1
-        while hasattr(self, 'model' + str(i)):
+        for i in range(1, self.layers):
             res = torch.sigmoid(res)
             res = getattr(self, 'model' + str(i))(res)
-            i += 1
         return res*self.std + self.mean
 
     def fit_init(self, dataset):
@@ -51,8 +58,7 @@ class DNN(Net):
 
     def transfer(self, dataset):
         res = self.model0(dataset.x, dataset.z)
-        i = 1
-        while hasattr(self, 'model' + str(i+1)):
+        for i in range(1, self.layers-1):
             res = torch.sigmoid(res)
             res = getattr(self, 'model' + str(i))(res)
             i += 1

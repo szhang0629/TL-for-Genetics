@@ -1,37 +1,9 @@
 import numpy as np
 import torch
-
-from skfda.representation.basis import BSpline, Fourier
 from torch import nn as nn
 
+from basis import Basis
 from net import Net
-
-
-class Basis:
-    def __init__(self, n_basis):
-        self.n_basis = n_basis
-        self.bss = Fourier((0, 1), n_basis=n_basis, period=2)
-        pen0 = self.bss.gram_matrix() * 2
-        vec = np.append(0.5, np.repeat(np.arange(1, n_basis//2+1), 2)) ** 2
-        vec = vec.reshape(n_basis, 1)
-        gram = vec @ vec.T
-        self.pen0 = torch.from_numpy(pen0).float()
-        self.pen2 = torch.from_numpy(pen0 * gram).float()
-        self.mat = None
-        self.length = None
-        bs0 = Fourier((0, 1), n_basis=1, period=1)
-        self.integral = torch.from_numpy(
-            self.bss.inner_product_matrix(bs0)).float() * (2**0.5)
-
-    def evaluate(self, point):
-        mat = self.bss.evaluate(point)[:, :, 0]
-        self.mat = torch.from_numpy(mat.T).float() * (2**0.5)
-
-    def to(self, device):
-        self.mat = self.mat.to(device)
-        self.pen0 = self.pen0.to(device)
-        self.pen2 = self.pen2.to(device)
-        self.integral = self.integral.to(device)
 
 
 class MyModelB(nn.Module):
@@ -46,35 +18,43 @@ class MyModelB(nn.Module):
         x = self.fc0((x @ self.bs0.mat) / self.bs0.length)
         if self.index is None:
             return x @ self.bs1.mat.t()
-        if type(self.index) is int:
+        if type(self.index) is not int:
             x = x[self.index]
         x = x * self.bs1.mat
         return torch.sum(x, 1, keepdim=True)
+
+    def pen(self):
+        penalty = 0
+        for name, param in self.named_parameters():
+            if param.requires_grad and "fc" in name:
+                if name.endswith(".weight"):
+                    penalty += self.bs1.pen_2d(param, self.bs0)
+                if name.endswith(".bias"):
+                    penalty += self.bs1.pen_1d(param)
+        return penalty
 
 
 class FDNN(Net):
     def __init__(self, models):
         self.realize = False
         super(FDNN, self).__init__()
-        self.hyper_lamb = [10**x for x in range(-1, 3)]
-        for i in range(len(models)):
+        self.layers = len(models)
+        self.hyper_lamb = [10**x for x in range(-2, 2)]
+        for i in range(self.layers):
             setattr(self, "model" + str(i), models[i])
 
     def forward(self, dataset):
         if not self.realize:
             self.realization(dataset)
         res = self.model0(dataset.x)
-        i = 1
-        while hasattr(self, 'model' + str(i)):
+        for i in range(1, self.layers):
             res = torch.sigmoid(res)
             res = getattr(self, 'model' + str(i))(res)
-            i += 1
         return res * self.std + self.mean
 
     def realization(self, dataset):
         device = dataset.x.device
-        i = 0
-        while hasattr(self, 'model' + str(i)):
+        for i in range(self.layers):
             model = getattr(self, 'model' + str(i))
             if i == 0:
                 pos = dataset.pos
@@ -98,7 +78,6 @@ class FDNN(Net):
                 loc = (loc - loc0) / (loc1 - loc0)
             model.bs1.evaluate(loc)
             model.bs1.to(device)
-            i += 1
 
     def fit_init(self, dataset):
         self.mean, self.std = torch.mean(dataset.y), torch.std(dataset.y)
@@ -112,29 +91,7 @@ class FDNN(Net):
 
     def penalty(self):
         penalty = 0
-        i = 0
-        while hasattr(self, 'model' + str(i)):
+        for i in range(self.layers):
             model = getattr(self, 'model' + str(i))
-            for name, param in model.named_parameters():
-                if param.requires_grad and "fc" in name:
-                    if name.endswith(".weight"):
-                        pen = torch.trace(model.bs0.pen0 @
-                                          ((param @ model.bs1.pen2) @
-                                           param.t()) + model.bs1.pen0 @
-                                          ((param.t() @ model.bs0.pen2) @
-                                           param)) * 0.5
-                        mean = torch.sum(param * (model.bs0.integral.t() @
-                                                  model.bs1.integral))
-                        var = torch.trace((model.bs0.pen0 @
-                                           ((param @ model.bs1.pen0) @
-                                            param.t()))) - (mean ** 2)
-                        pen = pen / var
-                        penalty += pen
-                    if name.endswith(".bias"):
-                        pen = param @ model.bs1.pen2 @ param
-                        mean = param @ model.bs1.integral
-                        var = param @ model.bs1.pen0 @ param - mean @ mean
-                        pen = pen / var
-                        penalty += pen
-            i += 1
+            penalty += model.pen()
         return penalty

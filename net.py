@@ -4,17 +4,20 @@ import os
 import torch
 from torch import nn as nn
 from torch import optim as optim
+
 from solution import Solution
 
 
 class Net(nn.Module, Solution):
     def __init__(self):
+        self.layers = None
         self.epoch, self.mean, self.std = 0, 0, 1
         super(Net, self).__init__()
 
     def fit(self, dataset, lamb):
         self.fit_init(dataset)
         self.epoch, self.lamb, k = 0, lamb, 0
+        lamb_scale = self.lamb/(self.size**0.5)
         cache = copy.deepcopy(self)
         optimizer = optim.Adam(self.parameters())  # , weight_decay=self.lamb)
         risk_min = float('Inf')
@@ -23,7 +26,7 @@ class Net(nn.Module, Solution):
             loss = dataset.loss(self)
             self.loss = loss.tolist()
             self.eval()
-            pen = self.penalty()*self.lamb/(self.size**0.5)
+            pen = self.penalty()*lamb_scale
             risk = loss / (self.std ** 2) + pen
             if self.epoch % 10 == 0:
                 if risk < risk_min:
@@ -32,9 +35,9 @@ class Net(nn.Module, Solution):
                     k = 0
                 else:
                     k += 1
-                    if k == 100:
+                    if k == 30:
                         break
-                if self.epoch % 10000 == 0:
+                if self.epoch % 1000 == 0:
                     print(self.epoch, self.loss, risk.tolist())
             risk.backward()
             optimizer.step()

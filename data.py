@@ -29,14 +29,15 @@ class Data:
         The constructor for Data class
         :param data(list) : An ordered list of essential data
         """
+        torch.set_default_tensor_type(torch.DoubleTensor)
         self.y, self.x, self.z, self.pos, self.loc = data
         self.scale_ratio = 1
 
     def to_tensor(self):
-        self.y = torch.from_numpy(self.y).float()
-        self.x = torch.from_numpy(self.x).float()
+        self.y = torch.from_numpy(self.y).double()
+        self.x = torch.from_numpy(self.x)
         if self.z is not None:
-            self.z = torch.from_numpy(self.z).float()
+            self.z = torch.from_numpy(self.z)
 
     def to_numpy(self):
         self.y = self.y.cpu().numpy()
@@ -74,7 +75,7 @@ class Data:
         points_ratio = len(self.pos)/(max(self.pos) - min(self.pos))
         std_ratio = (points_ratio*(x_mean**2 + x_std**2) -
                      (points_ratio**2) * (x_mean**2)) ** 0.5
-        self.scale_ratio = 1 / std_ratio / 5
+        self.scale_ratio = 1 / std_ratio
         return self.scale_ratio
 
     def process(self):

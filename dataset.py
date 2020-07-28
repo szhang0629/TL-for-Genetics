@@ -3,6 +3,7 @@ import os
 import numpy as np
 import pandas as pd
 from sklearn.impute import SimpleImputer
+
 from data import Data
 
 
@@ -36,13 +37,12 @@ class Data1(Data):
         pos = np.asarray(x.columns.astype('int'))
         loc = z[['age']].to_numpy().ravel()
         super().__init__(data=[y.values, x.values, z.values, pos, loc])
-        if target is not None:
-            self.scale_ratio = target.scale_ratio
-        else:
-            self.scale_ratio = self.scale_std()
         if target is None:
+            self.pos0, self.pos1 = min(pos), max(pos)
             self.loc0, self.loc1 = min(self.loc), max(self.loc)
         else:
+            self.scale_ratio = target.scale_ratio
+            self.pos0, self.pos1 = target.pos0, target.pos1
             self.loc0, self.loc1 = target.loc0, target.loc1
         self.process()
 
@@ -65,15 +65,13 @@ class Data3(Data):
             z.insert(1, 'age', np.mean(target.loc))
         else:
             z = yz.loc[:, ['sex', 'age']]
-            self.pos0, self.pos1 = min(pos), max(pos)
         loc = z[['age']].to_numpy().ravel()
         super().__init__(data=[y.values, x.values, z.values, pos, loc])
-        if target is not None:
-            self.scale_ratio = target.scale_ratio
-        else:
-            self.scale_ratio = self.scale_std()
         if target is None:
+            self.pos0, self.pos1 = min(pos), max(pos)
             self.loc0, self.loc1 = min(self.loc), max(self.loc)
         else:
+            self.scale_ratio = target.scale_ratio
+            self.pos0, self.pos1 = target.pos0, target.pos1
             self.loc0, self.loc1 = target.loc0, target.loc1
         self.process()

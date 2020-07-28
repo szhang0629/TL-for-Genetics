@@ -10,6 +10,7 @@ class Solution:
     A solution to present a regression model
     """
     def __init__(self):
+        torch.set_default_tensor_type(torch.DoubleTensor)
         self.size, self.loss = None, float('Inf')
         self.lamb, self.hyper_lamb = None, 1.0
 
