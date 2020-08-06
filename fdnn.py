@@ -1,18 +1,22 @@
+from abc import ABC
+
 import numpy as np
 import torch
 from torch import nn as nn
 
-from basis import Basis
+# from basis import Basis
+from haar import Haar as Basis
 from net import Net
 
 
-class MyModelB(nn.Module):
+class MyModelB(nn.Module, ABC):
     def __init__(self, n_basis_0, n_basis_1):
         self.bs0, self.bs1 = Basis(n_basis_0), Basis(n_basis_1)
         self.index = None
         torch.manual_seed(0)
         super(MyModelB, self).__init__()
-        self.fc0 = nn.Linear(self.bs0.n_basis, self.bs1.n_basis)
+        self.fc0 = nn.Linear(self.bs0.n_basis+self.bs0.linear,
+                             self.bs1.n_basis+self.bs1.linear)
 
     def forward(self, x):
         x = self.fc0((x @ self.bs0.mat) / self.bs0.length)
@@ -34,26 +38,29 @@ class MyModelB(nn.Module):
         return penalty
 
 
-class FDNN(Net):
+class FDNN(Net, ABC):
     def __init__(self, models):
         self.realize = False
         super(FDNN, self).__init__()
+        self.std_ratio = None
         self.layers = len(models)
-        self.hyper_lamb = [10**x for x in range(-2, 2)]
+        self.hyper_lamb = [10**x for x in range(-3, 2)]
         for i in range(self.layers):
             setattr(self, "model" + str(i), models[i])
 
     def forward(self, dataset):
         if not self.realize:
             self.realization(dataset)
-        res = self.model0(dataset.x)
+        res = self.model0(dataset.x) * self.std_ratio
         for i in range(1, self.layers):
             res = torch.sigmoid(res)
             res = getattr(self, 'model' + str(i))(res)
-        return res * self.std + self.mean
+        return res * self.std * 5 + self.mean
 
     def realization(self, dataset):
         device = dataset.x.device
+        if self.std_ratio is None:
+            self.std_ratio = dataset.scale_std()
         for i in range(self.layers):
             model = getattr(self, 'model' + str(i))
             if i == 0:
@@ -63,13 +70,13 @@ class FDNN(Net):
                 model.bs0.length = pos1 - pos0 + 1
                 pos = (pos - pos0) / (pos1 - pos0)
             else:
-                pos = np.arange(0.005, 1, 0.01)
+                pos = np.arange(1/256, 1, 1/128)
                 model.bs0.length = len(pos)
             model.bs0.evaluate(pos)
             model.bs0.to(device)
             if hasattr(self, 'model' + str(i + 1)):
                 model.index = None
-                loc = np.arange(0.005, 1, 0.01)
+                loc = np.arange(1/256, 1, 1/128)
             else:
                 model.index = -1
                 loc = dataset.loc
@@ -87,11 +94,11 @@ class FDNN(Net):
 
     def fit_end(self):
         self.realize = False
-        print(self.epoch, self.loss)
+        print(self.epoch, self.loss, self.penalty().tolist())
 
     def penalty(self):
         penalty = 0
         for i in range(self.layers):
             model = getattr(self, 'model' + str(i))
             penalty += model.pen()
-        return penalty
+        return penalty * self.lamb

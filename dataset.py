@@ -41,7 +41,6 @@ class Data1(Data):
             self.pos0, self.pos1 = min(pos), max(pos)
             self.loc0, self.loc1 = min(self.loc), max(self.loc)
         else:
-            self.scale_ratio = target.scale_ratio
             self.pos0, self.pos1 = target.pos0, target.pos1
             self.loc0, self.loc1 = target.loc0, target.loc1
         self.process()
@@ -68,10 +67,12 @@ class Data3(Data):
         loc = z[['age']].to_numpy().ravel()
         super().__init__(data=[y.values, x.values, z.values, pos, loc])
         if target is None:
-            self.pos0, self.pos1 = min(pos), max(pos)
-            self.loc0, self.loc1 = min(self.loc), max(self.loc)
+            delta_pos = (max(pos) - min(pos)) / 100
+            delta_loc = (max(loc) - min(loc)) / 100
+            self.pos0, self.pos1 = min(pos) - delta_pos, max(pos) + delta_pos
+            self.loc0, self.loc1 = \
+                min(self.loc) - delta_loc, max(self.loc) + delta_loc
         else:
-            self.scale_ratio = target.scale_ratio
             self.pos0, self.pos1 = target.pos0, target.pos1
             self.loc0, self.loc1 = target.loc0, target.loc1
         self.process()

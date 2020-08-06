@@ -20,9 +20,7 @@ class Data:
     pos : numpy array
         position of SNP data corresponding to x
     loc : numpy array or None
-        coordinate of predictor variable
-    scale_ratio : scalar
-        standardization coefficient for x
+        coordinate of predictor variableAAAAA
     """
     def __init__(self, data):
         """
@@ -31,7 +29,6 @@ class Data:
         """
         torch.set_default_tensor_type(torch.DoubleTensor)
         self.y, self.x, self.z, self.pos, self.loc = data
-        self.scale_ratio = 1
 
     def to_tensor(self):
         self.y = torch.from_numpy(self.y).double()
@@ -75,12 +72,12 @@ class Data:
         points_ratio = len(self.pos)/(max(self.pos) - min(self.pos))
         std_ratio = (points_ratio*(x_mean**2 + x_std**2) -
                      (points_ratio**2) * (x_mean**2)) ** 0.5
-        self.scale_ratio = 1 / std_ratio
-        return self.scale_ratio
+        return 1 / std_ratio / 10
 
     def process(self):
         self.to_tensor()
         self.to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+        self.x = self.x.double()
         self.z = None
 
     def loss(self, model, criterion=nn.MSELoss()):

@@ -1,4 +1,5 @@
 import copy
+from abc import ABC
 
 import torch
 from torch import nn as nn
@@ -6,7 +7,7 @@ from torch import nn as nn
 from net import Net
 
 
-class Layer(nn.Module):
+class Layer(nn.Module, ABC):
     def __init__(self, in_dim, out_dim, z_dim=0):
         torch.manual_seed(0)
         super(Layer, self).__init__()
@@ -26,7 +27,7 @@ class Layer(nn.Module):
         return penalty
 
 
-class DNN(Net):
+class DNN(Net, ABC):
     def __init__(self, models):
         super(DNN, self).__init__()
         self.layers = len(models)
@@ -54,7 +55,7 @@ class DNN(Net):
             if param.requires_grad and "fc" in name:
                 # and not name.endswith(".bias"):
                 penalty += torch.sum(param ** 2)
-        return penalty
+        return penalty * self.lamb
 
     def transfer(self, dataset):
         res = self.model0(dataset.x, dataset.z)

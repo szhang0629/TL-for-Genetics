@@ -41,7 +41,11 @@ class Solution:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         res = self.to_df(testset, method)
         if os.path.isfile(filename):
-            res.to_csv(filename, index=False, mode='a', header=False)
+            methods = pd.read_csv(filename).loc[:, 'method'].values
+            if method in methods:
+                print(res)
+            else:
+                res.to_csv(filename, index=False, mode='a', header=False)
         else:
             res.to_csv(filename, index=False)
 

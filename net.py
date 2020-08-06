@@ -1,5 +1,6 @@
 import copy
 import os
+from abc import ABC
 
 import torch
 from torch import nn as nn
@@ -8,7 +9,7 @@ from torch import optim as optim
 from solution import Solution
 
 
-class Net(nn.Module, Solution):
+class Net(nn.Module, Solution, ABC):
     def __init__(self):
         self.layers = None
         self.epoch, self.mean, self.std = 0, 0, 1
@@ -17,17 +18,15 @@ class Net(nn.Module, Solution):
     def fit(self, dataset, lamb):
         self.fit_init(dataset)
         self.epoch, self.lamb, k = 0, lamb, 0
-        lamb_scale = self.lamb/(self.size**0.5)
         cache = copy.deepcopy(self)
-        optimizer = optim.Adam(self.parameters())  # , weight_decay=self.lamb)
+        optimizer = optim.Adam(self.parameters())
         risk_min = float('Inf')
-        while self.epoch < 3e5:
+        while self.epoch < 2e5:
             optimizer.zero_grad()
             loss = dataset.loss(self)
             self.loss = loss.tolist()
             self.eval()
-            pen = self.penalty()*lamb_scale
-            risk = loss / (self.std ** 2) + pen
+            risk = loss / (self.std ** 2) + self.penalty()
             if self.epoch % 10 == 0:
                 if risk < risk_min:
                     cache = copy.deepcopy(self)
@@ -37,8 +36,8 @@ class Net(nn.Module, Solution):
                     k += 1
                     if k == 30:
                         break
-                if self.epoch % 1000 == 0:
-                    print(self.epoch, self.loss, risk.tolist())
+                # if self.epoch % 1000 == 0:
+                #     print(self.epoch, self.loss, risk.tolist())
             risk.backward()
             optimizer.step()
             self.epoch += 1
@@ -57,14 +56,19 @@ class Net(nn.Module, Solution):
 
     def pre_train(self, name, gene, target):
         method = self.__class__.__name__
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        dir_pre = os.path.join("..", "Models", method, gene, "")
-        if os.path.exists(dir_pre + name):
-            net_pre = torch.load(dir_pre + name, map_location=device)
-            net_pre.eval()
-        else:
-            oldset = target.__class__(gene, target=target)
-            oldset.x = target.scale_ratio * oldset.x
-            net_pre = self.hyper_train(oldset)
-            net_pre.save(dir_pre, name, 1)
+        # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        # dir_pre = os.path.join("..", "Models", method, gene, "")
+        # if os.path.exists(dir_pre + name):
+        #     net_pre = torch.load(dir_pre + name, map_location=device)
+        #     net_pre.eval()
+        # else:
+        oldset = target.__class__(gene, target=target)
+        net_pre = self.hyper_train(oldset)
+            # net_pre.save(dir_pre, name, 1)
+
+        i = 0
+        while hasattr(self, 'model' + str(i + 1)):
+            for param in getattr(self, 'model' + str(i)).parameters():
+                param.requires_grad = False
+            i += 1
         return net_pre
