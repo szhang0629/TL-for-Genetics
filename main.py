@@ -1,63 +1,45 @@
 # !/usr/bin/env python
 # coding: utf-8
-import os
-
-from dataset import Data1, Data3
-from dnn import DNN, Layer
-from fdnn import FDNN, MyModelB
+from simulation import Simulation
+from dataset import Data1, Data2
+from dnn import DNN
+from fdnn import FDNN
 from solution import Base, Ridge
 
 
-def main(seed_index, gene="0"):
-    # data, race, hidden_units = "sage", None, [9]
-    # data, race, hidden_units = "ukb", 4, [9]
-    data, race, hidden_units = "mice", None, [64]
-    str_units = str("_".join(str(x) for x in hidden_units))
-    if data == "ukb":
+def main(seed_index, gene="CHRNA6"):
+    data, race, hidden = "sage", None, [8, 4]
+    # data, race, hidden = "ukb", 4, [16, 4]
+    # data, race, hidden = "mice", None, [128]
+    if gene is None:
+        dataset = Simulation(seed_index)
+    elif data == "ukb":
         dataset = Data1(gene, data=data, race=race)
-        race = {1002: "irish", 4: "black"}[race]
-        filename = os.path.join("..", "Output", data, race, gene, str_units, "")
+    elif data == "mice":
+        dataset = Data2(gene, data=data)
     else:
-        # dataset = Data1(gene, data=data, race=race)
-        dataset = Data3(gene, data=data)
-        filename = os.path.join("..", "Output", data, gene, str_units, "")
-    filename += str(seed_index) + ".csv"
-    trainset, testset = dataset.split_seed(seed_index)
-    device = dataset.x.device
+        dataset = Data1(gene, data=data, race=race)
+    dataset.split_seed(seed_index)
 
-    bl = Base(trainset)
-    bl.to_csv(testset, filename)
-    #
-    # rd = Ridge(trainset)
-    # rd.to_csv(testset, filename)
-    #
-    # dims = [dataset.x.shape[1]] + hidden_units + [1]
-    # net = DNN([Layer(dims[i], dims[i + 1]) for i in range(len(dims) - 1)])
-    # net = net.to(device)
-    #
-    # net_nn = net.hyper_train(trainset)
-    # net_nn.to_csv(testset, filename)
-    #
-    # name_pre = data + "_" + str_units + ".md"
-    # net_pre = net.pre_train(name_pre, gene, dataset)
-    # net_tl = net_pre.hyper_train(trainset, [10 ** x for x in range(-3, 1)])
-    # net_tl.to_csv(testset, filename, "TL")
+    base = Base()
+    ridge = Ridge()
+    net = DNN([dataset.x.shape[1]] + hidden + [1])
+    # fbase = FDNN([64])
+    # model_flm = FDNN([hidden[0]] + [hidden[-1]])
+    # model_flm = FDNN([64] + [64])
+    # net_f = FDNN([64] + hidden + [64])
+    # net_f = FDNN([64] + hidden + [1])
 
-    dims = [hidden_units[0]] + hidden_units + [hidden_units[-1]]
+    bl = dataset.tuning(base)
+    rd = dataset.tuning(ridge)
+    net_dnn = dataset.tuning(net, [10 ** x for x in range(-4, 0)])
+    # net_bl = dataset.tuning(fbase,  [10**x for x in range(-3, 1)], "FBS")
+    # net_flm = dataset.tuning(model_flm, [10**x for x in range(-3, 1)], "FLM")
+    # net_fdnn = dataset.tuning(net_f, [10 ** x for x in range(-2, 2)])
 
-    model_flm = FDNN([MyModelB(dims[0], dims[-1])]).to(device)
-    net_flm = model_flm.hyper_train(trainset)
-    net_flm.to_csv(testset, filename, "FLM")
-
-    net = FDNN([MyModelB(dims[i], dims[i + 1])
-                for i in range(len(dims) - 1)]).to(device)
-
-    net_fnn = net.hyper_train(trainset)
-    net_fnn.to_csv(testset, filename)
-
-    name_pre = data + "_" + str_units + ".md"
-    net_pre = net.pre_train(name_pre, gene, dataset)
-    net_tl = net_pre.hyper_train(trainset)
-    net_tl.to_csv(testset, filename, "FTL")
+    net_ = net.pre_train(dataset, [10 ** x for x in range(-6, -3)])
+    net_tl = dataset.tuning(net_, [10 ** x for x in range(-4, 0)], "TL")
+    # net_f = net_f.pre_train(dataset, [10 ** x for x in range(-3, 1)])
+    # net_ftl = dataset.tuning(net_f, [10 ** x for x in range(-2, 2)], "FTL")
 
     return

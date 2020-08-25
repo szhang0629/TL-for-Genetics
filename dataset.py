@@ -8,6 +8,9 @@ from data import Data
 
 
 class Data1(Data):
+    """
+    Initialization of data from UKB or SAGE
+    """
     def __init__(self, gene, data="ukb", race=1001, target=None):
         folder = os.path.join("..", "Data", data, "")
         x = pd.read_csv(folder + gene + ".csv", index_col=0)
@@ -37,16 +40,21 @@ class Data1(Data):
         pos = np.asarray(x.columns.astype('int'))
         loc = z[['age']].to_numpy().ravel()
         super().__init__(data=[y.values, x.values, z.values, pos, loc])
-        if target is None:
-            self.pos0, self.pos1 = min(pos), max(pos)
-            self.loc0, self.loc1 = min(self.loc), max(self.loc)
-        else:
-            self.pos0, self.pos1 = target.pos0, target.pos1
-            self.loc0, self.loc1 = target.loc0, target.loc1
+        self.name = data
+        self.gene = gene
+        self.find_interval(target)
         self.process()
+        if data == "ukb":
+            race = {1001: "british", 1002: "irish", 4: "black"}[race]
+            self.out_path = os.path.join("..", "Output", data, race, gene, "")
+        else:
+            self.out_path = os.path.join("..", "Output", data, gene, "")
 
 
-class Data3(Data):
+class Data2(Data):
+    """
+    Initialization of data from rat or mice
+    """
     def __init__(self, gene, data="rat", target=None):
         folder = os.path.join("..", "Data", data, "")
         x = pd.read_csv(folder + str(gene) + ".csv", index_col=0)
@@ -66,13 +74,8 @@ class Data3(Data):
             z = yz.loc[:, ['sex', 'age']]
         loc = z[['age']].to_numpy().ravel()
         super().__init__(data=[y.values, x.values, z.values, pos, loc])
-        if target is None:
-            delta_pos = (max(pos) - min(pos)) / 100
-            delta_loc = (max(loc) - min(loc)) / 100
-            self.pos0, self.pos1 = min(pos) - delta_pos, max(pos) + delta_pos
-            self.loc0, self.loc1 = \
-                min(self.loc) - delta_loc, max(self.loc) + delta_loc
-        else:
-            self.pos0, self.pos1 = target.pos0, target.pos1
-            self.loc0, self.loc1 = target.loc0, target.loc1
+        self.name = data
+        self.gene = gene
+        self.find_interval(target)
         self.process()
+        self.out_path = os.path.join("..", "Output", data, gene, "")

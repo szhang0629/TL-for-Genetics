@@ -1,14 +1,16 @@
+import numpy as np
 import torch
 from skfda.representation.basis import Fourier, BSpline, Monomial
+import matplotlib.pyplot as plt
 
 
 class Basis:
-    def __init__(self, n_basis, linear=False):
-        self.n_basis = n_basis
+    def __init__(self, n_basis, linear=True):
+        self.n_basis = n_basis - linear
         self.linear = linear
-        # self.bss = Fourier((0, 1), n_basis=n_basis, period=1)
-        self.bss = BSpline(n_basis=n_basis, order=4)
-        bss2 = self.bss.derivative(order=2)
+        self.bss = Fourier((0, 1), n_basis=self.n_basis, period=1)
+        # self.bss = BSpline(n_basis=self.n_basis, order=n_basis//2)
+        bss2 = self.bss.derivative(order=1)
         coefficients = torch.from_numpy(bss2.coefficients)
         pen2 = torch.from_numpy(bss2.basis.gram_matrix())
         self.pen0 = torch.from_numpy(self.bss.gram_matrix())
@@ -28,7 +30,7 @@ class Basis:
         self.length = None
 
     def evaluate(self, point):
-        mat = self.bss.evaluate(point)[:, :, 0]
+        mat = self.bss.evaluate(point)[:, :, 0]  # len(point) = col(mat)
         self.mat = torch.from_numpy(mat.T)
         if self.linear:
             linear_func = torch.from_numpy(point).reshape(len(point), 1)
@@ -49,11 +51,19 @@ class Basis:
 
     def pen_2d(self, param, basis):
         # param = param[-basis.n_basis:, -self.n_basis:]
-        pen = torch.trace(basis.pen0 @ ((param @ self.pen2) @ param.t()) +
-                          self.pen0 @ ((param.t() @ basis.pen2) @ param)) * 0.5
+        pen = torch.trace(basis.pen0 @ ((param.t() @ self.pen2) @ param)) + \
+              torch.trace(self.pen0 @ ((param @ basis.pen2) @ param.t()))
         # pen = torch.trace(((param @ self.pen2) @ param.t()) +
         #                   ((param.t() @ basis.pen2) @ param)) * 0.5
         # if pen > 0:
         #     var = torch.sum(param[1 - basis.n_basis:, 1 - self.n_basis:] ** 2)
         #     pen = pen / var
-        return pen
+        return pen * 0.5
+
+    def plot(self, param):
+        param = np.asarray(torch.reshape(param, (-1,)).tolist())
+        param = param.reshape([len(param), 1])
+        x = np.linspace(0, 1, 100)
+        y = sum(param * self.bss.evaluate(x)[:, :, 0])
+        plt.plot(x, y, 'r')
+        plt.show()

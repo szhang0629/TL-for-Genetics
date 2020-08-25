@@ -21,7 +21,7 @@ class Net(nn.Module, Solution, ABC):
         cache = copy.deepcopy(self)
         optimizer = optim.Adam(self.parameters())
         risk_min = float('Inf')
-        while self.epoch < 2e5:
+        while self.epoch < 3e5:
             optimizer.zero_grad()
             loss = dataset.loss(self)
             self.loss = loss.tolist()
@@ -34,10 +34,11 @@ class Net(nn.Module, Solution, ABC):
                     k = 0
                 else:
                     k += 1
-                    if k == 30:
+                    if k == 50:
                         break
                 # if self.epoch % 1000 == 0:
-                #     print(self.epoch, self.loss, risk.tolist())
+                #     print(self.epoch, self.loss, self.penalty().tolist(),
+                #           risk.tolist())
             risk.backward()
             optimizer.step()
             self.epoch += 1
@@ -54,21 +55,17 @@ class Net(nn.Module, Solution, ABC):
         os.makedirs(folder, exist_ok=True)
         torch.save(self, folder + name)
 
-    def pre_train(self, name, gene, target):
+    def pre_train(self, target, lamb=None):
         method = self.__class__.__name__
-        # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        # dir_pre = os.path.join("..", "Models", method, gene, "")
-        # if os.path.exists(dir_pre + name):
-        #     net_pre = torch.load(dir_pre + name, map_location=device)
-        #     net_pre.eval()
-        # else:
-        oldset = target.__class__(gene, target=target)
-        net_pre = self.hyper_train(oldset)
-            # net_pre.save(dir_pre, name, 1)
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        dir_pre = os.path.join("..", "Models", method, target.gene, "")
+        oldset = target.__class__(target.gene, target=target)
+        name = oldset.name + "_" + self.str_units + ".md"
+        if os.path.exists(dir_pre + name):
+            net_pre = torch.load(dir_pre + name, map_location=device)
+            net_pre.eval()
+        else:
+            net_pre = self.hyper_train(oldset, lamb)
+            net_pre.save(dir_pre, name, 1)
 
-        i = 0
-        while hasattr(self, 'model' + str(i + 1)):
-            for param in getattr(self, 'model' + str(i)).parameters():
-                param.requires_grad = False
-            i += 1
         return net_pre

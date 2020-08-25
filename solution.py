@@ -1,6 +1,7 @@
 import copy
 import os
 
+import numpy as np
 import pandas as pd
 import torch
 
@@ -13,6 +14,7 @@ class Solution:
         torch.set_default_tensor_type(torch.DoubleTensor)
         self.size, self.loss = None, float('Inf')
         self.lamb, self.hyper_lamb = None, 1.0
+        self.str_units = "0"
 
     def hyper_train(self, dataset, lamb=None):
         if lamb is None:
@@ -21,33 +23,40 @@ class Solution:
             if type(lamb) is list:
                 lamb = lamb[0]
             net = copy.deepcopy(self)
-            net.fit(dataset, lamb=lamb)
+            net.fit(dataset, lamb)
             return net
-        trainset, validset = dataset.split_seed()
-        valid = [validset.loss(self.hyper_train(trainset, decay)).tolist()
-                 for decay in lamb]
+        dataset.split_seed()
+        valid = [dataset.test.loss(
+            self.hyper_train(dataset.train, decay)).tolist() for decay in lamb]
         print(valid)
-        lamb_opt = lamb[torch.argmin(torch.FloatTensor(valid))]
+        lamb_opt = lamb[np.argmin(valid)]
         return self.hyper_train(dataset, lamb_opt)
 
     def to_df(self, testset, method):
         return pd.DataFrame(data={'method': [method], 'pen': [self.lamb],
+                                  "hidden": [self.str_units],
                                   'train': [self.loss],
                                   'test': [testset.loss(self).tolist()]})
 
-    def to_csv(self, testset, filename, method=None):
+    def to_csv(self, testset, method=None):
         if method is None:
             method = self.__class__.__name__
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        os.makedirs(os.path.dirname(testset.out_path), exist_ok=True)
         res = self.to_df(testset, method)
-        if os.path.isfile(filename):
-            methods = pd.read_csv(filename).loc[:, 'method'].values
-            if method in methods:
-                print(res)
-            else:
-                res.to_csv(filename, index=False, mode='a', header=False)
+        print(res)
+        if os.path.isfile(testset.out_path):
+            methods = pd.read_csv(testset.out_path).loc[:, 'method'].values
+            if method not in methods:
+                res.to_csv(testset.out_path, index=False,
+                           mode='a', header=False)
         else:
-            res.to_csv(filename, index=False)
+            res.to_csv(testset.out_path, index=False)
+
+    def fit(self, *args):
+        return
+
+    def to(self, *args):
+        return self
 
 
 class Base(Solution):
@@ -64,7 +73,7 @@ class Base(Solution):
         bias = torch.ones(dataset.y.shape, device=dataset.y.device)
         return self.mean * bias
 
-    def fit(self, dataset):
+    def fit(self, dataset, lamb=None):
         self.size = dataset.y.shape[0]
         self.mean, self.std = torch.mean(dataset.y), torch.std(dataset.y)
         self.loss = torch.nn.MSELoss()(self(dataset), dataset.y).tolist()
@@ -74,7 +83,7 @@ class Ridge(Solution):
     def __init__(self, dataset=None, lamb=None):
         super(Ridge, self).__init__()
         if lamb is None:
-            lamb = [10 ** x for x in range(-4, 6)]
+            self.hyper_lamb = [10 ** x for x in range(-4, 6)]
         self.beta = None
         if dataset is not None:
             self.mean, self.std = torch.mean(dataset.y), torch.std(dataset.y)
@@ -88,7 +97,9 @@ class Ridge(Solution):
         x_scalar = (dataset.x-self.scalar_mean)/self.scalar_std
         return (x_scalar @ self.beta) * self.std + self.mean
 
-    def fit(self, dataset, lamb=1.0):
+    def fit(self, dataset, lamb=None):
+        if lamb is not None:
+            self.lamb = lamb
         self.size, self.lamb = dataset.y.shape[0], lamb
         self.mean, self.std = torch.mean(dataset.y), torch.std(dataset.y)
         x = dataset.x
