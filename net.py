@@ -12,12 +12,13 @@ from solution import Solution
 class Net(nn.Module, Solution, ABC):
     def __init__(self):
         self.layers = None
-        self.epoch, self.mean, self.std = 0, 0, 1
+        self.mean, self.std = 0, 1
         super(Net, self).__init__()
 
     def fit(self, dataset, lamb):
         self.fit_init(dataset)
         self.epoch, self.lamb, k = 0, lamb, 0
+        self.lamb_sca = self.lamb / (self.size ** 0.5)
         cache = copy.deepcopy(self)
         optimizer = optim.Adam(self.parameters())
         risk_min = float('Inf')
@@ -36,9 +37,9 @@ class Net(nn.Module, Solution, ABC):
                     k += 1
                     if k == 50:
                         break
-                # if self.epoch % 1000 == 0:
-                #     print(self.epoch, self.loss, self.penalty().tolist(),
-                #           risk.tolist())
+                if self.epoch % 1000 == 0:
+                    print(self.epoch, self.loss, self.penalty().tolist(),
+                          risk.tolist())
             risk.backward()
             optimizer.step()
             self.epoch += 1

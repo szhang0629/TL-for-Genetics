@@ -9,7 +9,7 @@ from solution import Base, Ridge
 
 def main(seed_index, gene="CHRNA5"):
     # data, race, hidden = "sage", None, [4]
-    data, race, hidden = "ukb", 1002, [4]
+    data, race, hidden = "ukb", 1002, [64]
     # data, race, hidden = "mice", None, [128]
     if gene is None:
         dataset = Simulation(seed_index)
@@ -22,23 +22,22 @@ def main(seed_index, gene="CHRNA5"):
     dataset.split_seed(seed_index)
 
     base = Base()
-    ridge = Ridge()
-    net = DNN([dataset.x.shape[1]] + hidden + [1])
-    # fbase = FDNN([64])
-    # model_flm = FDNN([hidden[0]] + [hidden[-1]])
-    # model_flm = FDNN([64] + [64])
-    # net_f = FDNN([64] + hidden + [64])
+    # ridge = Ridge()
+    # net = DNN([dataset.x.shape[1]] + hidden + [1])
+    fbase = FDNN([64])
+    model_flm = FDNN([hidden[0], hidden[-1]])
+    net_f = FDNN([64] + hidden + [64])
     # net_f = FDNN([64] + hidden + [1])
 
-    bl = dataset.tuning(base)
-    rd = dataset.tuning(ridge)
-    net_dnn = dataset.tuning(net, [1000 * (3 ** x) for x in range(-1, 2)])
-    # net_bl = dataset.tuning(fbase,  [10**x for x in range(-3, 1)], "FBS")
-    # net_flm = dataset.tuning(model_flm, [10**x for x in range(-3, 1)], "FLM")
-    # net_fdnn = dataset.tuning(net_f, [10 ** x for x in range(-2, 2)])
+    # bl = dataset.tuning(base)
+    # rd = dataset.tuning(ridge)
+    # net_dnn = dataset.tuning(net, [0.1 * (3 ** x) for x in range(-1, 2)])
+    net_bl = dataset.tuning(fbase,  [10**x for x in range(-3, 1)], "FBS")
+    net_flm = dataset.tuning(model_flm, [10**x for x in range(-3, 1)], "FLM")
+    net_fdnn = dataset.tuning(net_f, [10 ** x for x in range(-2, 2)])
 
-    net_ = net.pre_train(dataset, [1000 * (3 ** x) for x in range(-1, 2)])
-    net_tl = dataset.tuning(net_, [1000 * (3 ** x) for x in range(-1, 2)], "TL")
+    # net_ = net.pre_train(dataset, [0.1 * (3 ** x) for x in range(-1, 2)])
+    # net_tl = dataset.tuning(net_, [3 ** x for x in range(-1, 2)], "TL")
     # net_f = net_f.pre_train(dataset, [10 ** x for x in range(-3, 1)])
     # net_ftl = dataset.tuning(net_f, [10 ** x for x in range(-2, 2)], "FTL")
 

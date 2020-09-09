@@ -13,8 +13,8 @@ class Solution:
     def __init__(self):
         torch.set_default_tensor_type(torch.DoubleTensor)
         self.size, self.loss = None, float('Inf')
-        self.lamb, self.hyper_lamb = None, 1.0
-        self.str_units = "0"
+        self.lamb, self.lamb_sca, self.hyper_lamb = None, None, 1.0
+        self.epoch, self.str_units = 0, "0"
 
     def hyper_train(self, dataset, lamb=None):
         if lamb is None:
@@ -34,8 +34,8 @@ class Solution:
 
     def to_df(self, testset, method):
         return pd.DataFrame(data={'method': [method], 'pen': [self.lamb],
-                                  "hidden": [self.str_units],
-                                  'train': [self.loss],
+                                  'hidden': [self.str_units],
+                                  'epoch': [self.epoch], 'train': [self.loss],
                                   'test': [testset.loss(self).tolist()]})
 
     def to_csv(self, testset, method=None):
@@ -62,9 +62,9 @@ class Solution:
 class Base(Solution):
     def __init__(self, dataset=None):
         super(Base, self).__init__()
-        self.lamb = 0.
+        self.lamb = 1.
         if dataset is not None:
-            self.mean, self.std = torch.mean(dataset.y), torch.std(dataset.y)
+            self.mean, self.std = dataset.y.mean(), dataset.y.std()
             self.fit(dataset)
         else:
             self.mean, self.std = 0, 1
@@ -83,10 +83,10 @@ class Ridge(Solution):
     def __init__(self, dataset=None, lamb=None):
         super(Ridge, self).__init__()
         if lamb is None:
-            self.hyper_lamb = [10 ** x for x in range(-4, 6)]
+            self.hyper_lamb = [(10**4) * (3**x)  for x in range(-2, 3)]
         self.beta = None
         if dataset is not None:
-            self.mean, self.std = torch.mean(dataset.y), torch.std(dataset.y)
+            self.mean, self.std = dataset.y.mean(), dataset.y.std()
             self.scalar_mean, self.scalar_std = None, None
             cache = self.hyper_train(dataset, lamb)
             self.__dict__.update(cache.__dict__)
@@ -100,8 +100,9 @@ class Ridge(Solution):
     def fit(self, dataset, lamb=None):
         if lamb is not None:
             self.lamb = lamb
-        self.size, self.lamb = dataset.y.shape[0], lamb
-        self.mean, self.std = torch.mean(dataset.y), torch.std(dataset.y)
+        self.size = dataset.y.shape[0]
+        self.lamb_sca = self.lamb / (self.size ** 0.5)
+        self.mean, self.std = dataset.y.mean(), dataset.y.std()
         x = dataset.x
         self.scalar_mean = torch.mean(x, 0)
         # self.scalar_std = torch.std(x, 0)
@@ -109,5 +110,6 @@ class Ridge(Solution):
         x = (x-self.scalar_mean)/self.scalar_std
         x_t = x.transpose(0, 1)
         mat = torch.eye(x.shape[1], device=dataset.x.device)
-        self.beta = torch.inverse((x_t @ x) + lamb * mat) @ x_t @ dataset.y
+        self.beta = ((x_t @ x) + self.lamb_sca * mat).inverse() @ x_t @ dataset.y
         self.loss = torch.nn.MSELoss()(self(dataset), dataset.y).tolist()
+

@@ -82,7 +82,8 @@ class Data:
 
     def process(self):
         self.to_tensor()
-        self.to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        # self.to(device)
         self.x = self.x.double()
         self.z = None
 

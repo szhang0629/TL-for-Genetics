@@ -18,19 +18,25 @@ class DNN(Net, ABC):
             self.str_units = str("_".join(str(x) for x in dims[1:(-1)]))
         models = [LayerA(dims[i], dims[i + 1]) for i in range(len(dims) - 1)]
         self.layers = len(models)
+        # self.mean_ratio, self.std_ratio = None, None
         self.hyper_lamb = [10 ** x for x in range(-4, 2)]
         for i in range(self.layers):
             setattr(self, "model" + str(i), models[i])
 
     def forward(self, dataset):
+        # res = dataset.x  # (dataset.x - self.mean_ratio)/self.std_ratio
         res = self.model0(dataset.x, dataset.z)
         for i in range(1, self.layers):
-            res = torch.nn.LeakyReLU()(res)
-            # res = torch.nn.Tanh()(res)
+            # res = torch.nn.LeakyReLU()(res)
+            res = torch.sigmoid(res)
             res = getattr(self, 'model' + str(i))(res)
         return res*self.std + self.mean
 
     def fit_init(self, dataset):
+        # if self.mean_ratio is None:
+        #     self.mean_ratio = dataset.x.mean(0)
+        # if self.std_ratio is None:
+        #     self.std_ratio = dataset.x.std(0)*(dataset.x.shape[1]**0.5)
         self.mean, self.std = torch.mean(dataset.y), torch.std(dataset.y)
         self.size = dataset.x.shape[0]
 
@@ -39,11 +45,12 @@ class DNN(Net, ABC):
 
     def penalty(self):
         penalty = 0
-        for name, param in self.named_parameters():
-            if param.requires_grad and "fc" in name:
-                # and not name.endswith(".bias"):
-                penalty += torch.sum(param ** 2)
-        return penalty * self.lamb
+        for i in range(self.layers-1):
+            model = getattr(self, 'model' + str(i))
+            penalty += model.pen() * 10e-3 / (self.size ** 0.5)
+        model = getattr(self, 'model' + str(self.layers-1))
+        penalty += model.pen() * self.lamb_sca
+        return penalty
 
 
 class DNNDo(Net, ABC):

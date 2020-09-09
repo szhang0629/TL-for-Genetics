@@ -35,7 +35,7 @@ class FDNN(Net, ABC):
             self.realization(dataset)
         res = self.model0(dataset.x * self.std_ratio)
         for i in range(1, self.layers):
-            res = torch.nn.LeakyReLU()(res)
+            res = torch.sigmoid(res)
             res = getattr(self, 'model' + str(i))(res)
         return res * self.std + self.mean
 
@@ -88,8 +88,9 @@ class FDNN(Net, ABC):
         print(self.epoch, self.loss, self.penalty().tolist())
 
     def penalty(self):
+        # return getattr(self, 'model' + str(self.layers-1)).pen() * self.lamb
         penalty = 0
         for i in range(self.layers):
             model = getattr(self, 'model' + str(i))
             penalty += model.pen()
-        return penalty * self.lamb
+        return penalty * self.lamb_sca
