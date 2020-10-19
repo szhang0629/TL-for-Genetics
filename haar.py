@@ -10,13 +10,13 @@ def psi(x, j, k):
 
 
 class Haar:
-    def __init__(self, n_basis):
+    def __init__(self, n_basis, linear=True):
         self.level = int(math.log2(n_basis))
-        self.n_basis = n_basis
-        self.linear = False
+        self.n_basis = n_basis + linear - 1
+        self.linear = linear
         self.mat = None
         self.length = None
-        self.pen2 = np.zeros([self.n_basis, self.n_basis])
+        self.pen2 = np.zeros([n_basis, n_basis])
         # self.pen2[0, 0] = 1
         self.pen2[1, 1] = 4
         for level1 in range(1, self.level):
@@ -47,11 +47,16 @@ class Haar:
         self.pen2 = self.pen2 + self.pen2.T - np.diag(np.diag(self.pen2))
         # self.pen2 *= 2**self.level
         self.pen2 = torch.from_numpy(self.pen2)
+        if not self.linear:
+            self.pen2 = self.pen2[1:, 1:]
 
     def evaluate(self, point):
         self.mat = np.zeros([self.n_basis, len(point)])
-        self.mat[0, :] = 1 * ((point >= 0) & (point < 1))
-        i = 1
+        if self.linear:
+            self.mat[0, :] = 1 * ((point >= 0) & (point < 1))
+            i = 1
+        else:
+            i = 0
         for j in range(self.level):
             for k in range(2**j):
                 self.mat[i, :] = psi(point, j, k)
@@ -62,20 +67,24 @@ class Haar:
         self.mat = self.mat.to(device)
         self.pen2 = self.pen2.to(device)
 
-    def pen_1d(self, param):
-        pen = param @ self.pen2 @ param
+    def pen_1d(self, param, lamb1=1):
+        pen = param @ self.pen2 @ param * lamb1
         # if pen > 0:
         #     var = torch.sum(param[1-self.n_basis:] ** 2)
         #     pen = pen/var
         return pen
 
-    def pen_2d(self, param, basis):
-        pen = torch.trace((param.t() @ self.pen2) @ param) +\
-              torch.trace((param @ basis.pen2) @ param.t())
+    def pen_2d(self, param, basis, lamb0=1, lamb1=1):
+        pen = torch.trace((param.t() @ self.pen2) @ param) * lamb1 / (
+                self.n_basis ** 0.5) +\
+              torch.trace((param @ basis.pen2) @ param.t()) * lamb0 / (
+                      basis.n_basis ** 0.5)
         # if pen > 0:
         #     var = torch.sum(param ** 2) - param[0, 0]**2
         #     pen = pen / var
-        return pen * 0.5
+        # pen = torch.trace(basis.pen2 @ param.t() @ self.pen2 @ param)*lamb1 /
+        #       (self.n_basis ** 0.5)
+        return pen
 
     def plot(self, param):
         param = torch.reshape(param, (-1,)).tolist()

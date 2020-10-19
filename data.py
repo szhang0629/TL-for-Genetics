@@ -83,7 +83,7 @@ class Data:
     def process(self):
         self.to_tensor()
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        # self.to(device)
+        self.to(device)
         self.x = self.x.double()
         self.z = None
 
@@ -103,8 +103,8 @@ class Data:
             self.pos0, self.pos1 = target.pos0, target.pos1
             self.loc0, self.loc1 = target.loc0, target.loc1
 
-    def tuning(self, model, lamb=None, method=None):
-        model = model.to(self.y.device)
+    def tuning(self, model, lamb=None):
+        model.to(self.y.device)
         model_tuned = model.hyper_train(self.train, lamb)
-        model_tuned.to_csv(self.test, method)
+        model_tuned.to_csv(self.test)
         return model_tuned

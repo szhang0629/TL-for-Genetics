@@ -25,10 +25,11 @@ class Data1(Data):
             yz = yz.loc[race_index, :]
         if target is None:
             x = x.loc[:, x.isnull().sum() / x.shape[0] < 0.01]
-            imp_mean = SimpleImputer(missing_values=np.nan, strategy='mean')
-            imp_mean.fit(x)
-            x = pd.DataFrame(data=imp_mean.transform(x.values),
-                             index=x.index, columns=x.columns)
+            # imp_mean = SimpleImputer(missing_values=np.nan, strategy='mean')
+            # imp_mean.fit(x)
+            # x = pd.DataFrame(data=imp_mean.transform(x.values),
+            #                  index=x.index, columns=x.columns)
+            x = x.dropna()  
         else:
             x = x[target.pos.astype('str')]
             x = x.dropna()

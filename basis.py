@@ -5,11 +5,11 @@ import matplotlib.pyplot as plt
 
 
 class Basis:
-    def __init__(self, n_basis, linear=True):
+    def __init__(self, n_basis, linear=False):
         self.n_basis = n_basis - linear
         self.linear = linear
-        self.bss = Fourier((0, 1), n_basis=self.n_basis, period=1)
-        # self.bss = BSpline(n_basis=self.n_basis, order=n_basis//2)
+        # self.bss = Fourier((0, 1), n_basis=self.n_basis, period=1)
+        self.bss = BSpline(n_basis=self.n_basis, order=n_basis//2)
         bss2 = self.bss.derivative(order=1)
         coefficients = torch.from_numpy(bss2.coefficients)
         pen2 = torch.from_numpy(bss2.basis.gram_matrix())
@@ -41,24 +41,25 @@ class Basis:
         self.pen0 = self.pen0.to(device)
         self.pen2 = self.pen2.to(device)
 
-    def pen_1d(self, param):
+    def pen_1d(self, param, lamb1=1.):
         # pen = param[-self.n_basis:] @ self.pen2 @ param[-self.n_basis:]
-        pen = param @ self.pen2 @ param
+        pen = param @ self.pen2 @ param * lamb1
         # if pen > 0:
         #     var = torch.sum(param[1-self.n_basis:] ** 2)
         #     pen = pen/var
         return pen
 
-    def pen_2d(self, param, basis):
+    def pen_2d(self, param, basis, lamb0=1., lamb1=1.):
         # param = param[-basis.n_basis:, -self.n_basis:]
-        pen = torch.trace(basis.pen0 @ ((param.t() @ self.pen2) @ param)) + \
-              torch.trace(self.pen0 @ ((param @ basis.pen2) @ param.t()))
+        pen = torch.trace(basis.pen0 @ ((param.t() @ self.pen2) @ param)) \
+              * lamb1 + torch.trace(self.pen0 @ ((param @ basis.pen2)
+                                                 @ param.t())) * lamb0
         # pen = torch.trace(((param @ self.pen2) @ param.t()) +
         #                   ((param.t() @ basis.pen2) @ param)) * 0.5
         # if pen > 0:
         #     var = torch.sum(param[1 - basis.n_basis:, 1 - self.n_basis:] ** 2)
         #     pen = pen / var
-        return pen * 0.5
+        return pen
 
     def plot(self, param):
         param = np.asarray(torch.reshape(param, (-1,)).tolist())

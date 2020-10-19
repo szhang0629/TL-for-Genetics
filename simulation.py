@@ -12,7 +12,7 @@ class Simulation(Data):
     """Simulation Data"""
     def __init__(self, seed_index, target=None):
         random.seed(seed_index)
-        n, p = 500, 200
+        n, p = 1000, 200
         maf_interval = [0.01, 0.5]
         # Get data for use
         ped = pd.read_csv("../Data/ped.ped", sep="\t", header=None)
