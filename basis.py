@@ -9,7 +9,7 @@ class Basis:
         self.n_basis = n_basis - linear
         self.linear = linear
         # self.bss = Fourier((0, 1), n_basis=self.n_basis, period=1)
-        self.bss = BSpline(n_basis=self.n_basis, order=n_basis//2)
+        self.bss = BSpline(n_basis=self.n_basis, order=4)
         bss2 = self.bss.derivative(order=1)
         coefficients = torch.from_numpy(bss2.coefficients)
         pen2 = torch.from_numpy(bss2.basis.gram_matrix())

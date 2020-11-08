@@ -14,20 +14,22 @@ class FNN(Net, ABC):
         self.realize = False
         super(FNN, self).__init__(lamb)
         if len(dims) == 1:
-            models = [LayerD(dims[0])]
+            models = [LayerD(Basis(dims[0]))]
+            self.method_name = "FBase"
         if len(dims) == 2:
             if dims[-1] == 1:
                 models = [LayerC(dims[-2])]
             else:
                 models = [LayerB(Basis(dims[0]), Basis(dims[1]))]
+        mid = False
         if len(dims) > 2:
-            models = [LayerB(Basis(dims[0]), Basis(dims[1], False))]
-            models += [LayerB(Basis(dims[i], False), Basis(dims[i+1], False))
+            models = [LayerB(Basis(dims[0]), Basis(dims[1], mid), bias=False)]
+            models += [LayerB(Basis(dims[i], mid), Basis(dims[i+1], mid))
                        for i in range(1, len(dims) - 2)]
             if dims[-1] == 1:
-                models += [LayerC(Basis(dims[-2], False))]
+                models += [LayerC(Basis(dims[-2], mid))]
             else:
-                models += [LayerB(Basis(dims[-2], False), Basis(dims[-1]))]
+                models += [LayerB(Basis(dims[-2], mid), Basis(dims[-1]))]
         if len(dims) <= 2:
             self.str_units = "0"
         else:
@@ -36,6 +38,7 @@ class FNN(Net, ABC):
         self.layers = len(models)
         for i in range(self.layers):
             setattr(self, "model" + str(i), models[i])
+        # self.lamb_ = 1e4
 
     def forward(self, dataset):
         if not self.realize:
@@ -98,13 +101,15 @@ class FNN(Net, ABC):
 
     def fit_end(self):
         self.realize = False
-        print(self.epoch, self.loss, self.penalty().tolist())
+        print(self.epoch, self.loss)
 
     def penalty(self):
+        if self.layers == 1:
+            return self.model0.pen(lamb0=self.lamb, lamb1=self.lamb)
         penalty = 0
         for i in range(self.layers-1):
             model = getattr(self, 'model' + str(i))
-            penalty += model.pen(lamb0=1e-9, lamb1=1e-6)
+            penalty += model.pen(lamb0=1e-9, lamb1=1e-3)
         model = getattr(self, 'model' + str(self.layers-1))
-        penalty += model.pen(lamb0=self.lamb, lamb1=1.)
-        return penalty
+        penalty += model.pen(lamb0=1e0, lamb1=self.lamb)
+        return penalty / self.size

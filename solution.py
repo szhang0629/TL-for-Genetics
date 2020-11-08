@@ -36,10 +36,10 @@ class Solution:
         return self.hyper_train(dataset, lamb_opt)
 
     def to_df(self, testset):
-        return pd.DataFrame(data={'method': [self.method_name], 
-                                  'pen': [self.lamb],'hidden': [self.str_units],
-                                  'epoch': [self.epoch], 'train': [self.loss],
-                                  'test': [testset.loss(self).tolist()]})
+        return pd.DataFrame(
+            data={'method': [self.method_name], 'pen': [self.lamb],
+                  'hidden': [self.str_units], 'epoch': [self.epoch],
+                  'train': [self.loss], 'test': [testset.loss(self).tolist()]})
 
     def to_csv(self, testset):
         os.makedirs(os.path.dirname(testset.out_path), exist_ok=True)
@@ -47,7 +47,8 @@ class Solution:
         print(res)
         if os.path.isfile(testset.out_path):
             methods = pd.read_csv(testset.out_path).loc[:, 'method'].values
-            if self.method_name not in methods:
+            pens = pd.read_csv(testset.out_path).loc[:, 'pen'].values
+            if self.method_name not in methods or self.lamb not in pens:
                 res.to_csv(testset.out_path, index=False,
                            mode='a', header=False)
         else:

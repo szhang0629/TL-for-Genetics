@@ -15,6 +15,34 @@ class Net(Solution, nn.Module, ABC):
         nn.Module.__init__(self)
         Solution.__init__(self, lamb)
 
+    # def fit(self, dataset, lamb):
+    #     self.fit_init(dataset)
+    #     self.epoch, self.lamb, k = 0, lamb, 0
+    #     cache = copy.deepcopy(self)
+    #     optimizer = optim.Adam(self.parameters(), weight_decay=lamb)
+    #     risk_min = float('Inf')
+    #     while self.epoch < 1e6:
+    #         optimizer.zero_grad()
+    #         loss = dataset.loss(self)
+    #         self.eval()
+    #         if self.epoch % 10 == 0:
+    #             if loss < risk_min:
+    #                 self.loss = loss.tolist()
+    #                 cache = copy.deepcopy(self)
+    #                 risk_min = loss.tolist()
+    #                 k = 0
+    #             else:
+    #                 k += 1
+    #                 if k == 100:
+    #                     break
+    #             # if self.epoch % 10000 == 0:
+    #             #     print(self.epoch, loss.tolist())
+    #         loss.backward()
+    #         optimizer.step()
+    #         self.epoch += 1
+    #     self.__dict__.update(cache.__dict__)
+    #     self.fit_end()
+
     def fit(self, dataset, lamb):
         self.fit_init(dataset)
         self.epoch, self.lamb, k = 0, lamb, 0
@@ -22,7 +50,7 @@ class Net(Solution, nn.Module, ABC):
         cache = copy.deepcopy(self)
         optimizer = optim.Adam(self.parameters())
         risk_min = float('Inf')
-        while self.epoch < 1e5:
+        while self.epoch < 1e6:
             optimizer.zero_grad()
             pen = self.penalty()
             # if pen > 1e-3:
@@ -33,6 +61,7 @@ class Net(Solution, nn.Module, ABC):
             self.eval()
             # risk = loss / (self.std ** 2)
             risk = loss / (self.std ** 2) + pen
+            # risk = loss + pen
             if self.epoch % 10 == 0:
                 if risk < risk_min:
                     self.loss = loss.tolist()
@@ -41,10 +70,11 @@ class Net(Solution, nn.Module, ABC):
                     k = 0
                 else:
                     k += 1
-                    if k == 50:
+                    if k == 100:
                         break
-                if self.epoch % 10000 == 0:
-                    print(self.epoch, loss.tolist(), pen.tolist(), risk.tolist())
+                # if self.epoch % 10000 == 0:
+                #     print(self.epoch, loss.tolist(),
+                #           pen.tolist(), risk.tolist())
             risk.backward()
             optimizer.step()
             self.epoch += 1
@@ -67,13 +97,15 @@ class Net(Solution, nn.Module, ABC):
         dir_pre = os.path.join("..", "Models", method, target.gene, "")
         oldset = target.__class__(target.gene, target=target)
         name = oldset.name + "_" + self.str_units + ".md"
+        lamb_cache = self.hyper_lamb
         if os.path.exists(dir_pre + name):
             net_pre = torch.load(dir_pre + name, map_location=device)
             net_pre.eval()
         else:
             self.to(device)
-            net_pre = self.hyper_train(oldset)
+            net_pre = self.hyper_train(oldset, lamb)
             net_pre.save(dir_pre, name, 1)
 
-        net_pre.hyper_lamb = lamb
+        net_pre.hyper_lamb = lamb_cache
+        net_pre.method_name = "FTL" if method[0] == "F" else "TL"
         return net_pre
