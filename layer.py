@@ -8,10 +8,10 @@ class LayerA(nn.Module, ABC):
     """
     A class to represent a layer of vanilla neural network
     """
-    def __init__(self, in_dim, out_dim, z_dim=0):
-        torch.manual_seed(629)
+    def __init__(self, in_dim, out_dim, z_dim=0, bias=True):
+        torch.manual_seed(0)
         super(LayerA, self).__init__()
-        self.fc = nn.Linear(in_dim + z_dim, out_dim)
+        self.fc = nn.Linear(in_dim + z_dim, out_dim, bias=bias)
         # self.do = nn.Dropout()
 
     def forward(self, x, z=None):
@@ -24,8 +24,26 @@ class LayerA(nn.Module, ABC):
         penalty = 0
         for name, param in self.named_parameters():
             if param.requires_grad and "fc" in name:
-                    # and not name.endswith(".bias"):
+                # and not name.endswith(".bias"):
+                penalty += (param.abs()).sum()
+                # penalty += (param ** 2).sum()
+        return penalty
+
+    def pen2(self):
+        penalty = 0
+        for name, param in self.named_parameters():
+            if param.requires_grad and "fc" in name:
+                # and not name.endswith(".bias"):
                 penalty += (param ** 2).sum()
+        return penalty
+
+    def pen_group(self):
+        penalty = 0
+        for name, param in self.named_parameters():
+            if param.requires_grad and "fc" in name and not name.endswith(
+                    ".bias"):
+                penalty += ((param ** 2).sum(0) ** 0.5).sum()
+                # penalty += (param ** 2).sum()
         return penalty
 
 
@@ -67,7 +85,9 @@ class LayerC(nn.Module, ABC):
         self.fc0 = nn.Linear(self.bs0.n_basis+self.bs0.linear, 1)
 
     def forward(self, x):
-        return self.fc0((x @ self.bs0.mat) / self.bs0.length)
+        res = self.fc0((x @ self.bs0.mat) / self.bs0.length)
+        # res = nn.Dropout()(res)
+        return res
 
     def pen(self, lamb0=1, lamb1=1):
         penalty = 0

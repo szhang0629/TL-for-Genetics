@@ -1,7 +1,6 @@
-import copy
 import os
+import math
 
-import numpy as np
 import pandas as pd
 import torch
 
@@ -14,43 +13,30 @@ class Solution:
         torch.set_default_tensor_type(torch.DoubleTensor)
         self.size, self.loss = None, float('Inf')
         self.hyper_lamb = 1. if lamb is None else lamb
-        self.lamb = None
+        self.lamb, self.lr = None, 0.
         self.epoch, self.str_units = 0, "0"
         self.mean, self.std = 0, 1
         self.method_name = self.__class__.__name__
-
-    def hyper_train(self, dataset, lamb=None):
-        if lamb is None:
-            lamb = self.hyper_lamb
-        if type(lamb) is not list or len(lamb) == 1:
-            if type(lamb) is list:
-                lamb = lamb[0]
-            net = copy.deepcopy(self)
-            net.fit(dataset, lamb)
-            return net
-        dataset.split_seed()
-        valid = [dataset.test.loss(
-            self.hyper_train(dataset.train, decay)).tolist() for decay in lamb]
-        print(valid)
-        lamb_opt = lamb[np.argmin(valid)]
-        return self.hyper_train(dataset, lamb_opt)
+        self.criterion = torch.nn.MSELoss()
 
     def to_df(self, testset):
         return pd.DataFrame(
-            data={'method': [self.method_name], 'pen': [self.lamb],
+            data={'method': [self.method_name],
+                  'pen': [None if self.lamb is None else math.log10(self.lamb)],
                   'hidden': [self.str_units], 'epoch': [self.epoch],
+                  'lr': [self.lr],
                   'train': [self.loss], 'test': [testset.loss(self).tolist()]})
 
     def to_csv(self, testset):
         os.makedirs(os.path.dirname(testset.out_path), exist_ok=True)
         res = self.to_df(testset)
+        pd.options.display.float_format = '{:,.8f}'.format
         print(res)
         if os.path.isfile(testset.out_path):
-            methods = pd.read_csv(testset.out_path).loc[:, 'method'].values
-            pens = pd.read_csv(testset.out_path).loc[:, 'pen'].values
-            if self.method_name not in methods or self.lamb not in pens:
-                res.to_csv(testset.out_path, index=False,
-                           mode='a', header=False)
+            # methods = pd.read_csv(testset.out_path).loc[:, 'method'].values
+            # # pens = pd.read_csv(testset.out_path).loc[:, 'pen'].values
+            # if self.method_name not in methods:
+            res.to_csv(testset.out_path, index=False, mode='a', header=False)
         else:
             res.to_csv(testset.out_path, index=False)
 
@@ -72,14 +58,15 @@ class Base(Solution):
     def fit(self, dataset, lamb=None):
         self.size = dataset.y.shape[0]
         self.mean, self.std = dataset.y.mean(), dataset.y.std()
-        self.loss = torch.nn.MSELoss()(self(dataset), dataset.y).tolist()
+        self.loss = self.criterion(self(dataset), dataset.y).tolist()
+        print(self.loss, self.mean.tolist(), self.std.tolist(), self.mean)
 
 
 class Ridge(Solution):
     def __init__(self, lamb=None):
         super(Ridge, self).__init__(lamb)
         if lamb is None:
-            self.hyper_lamb = [(10**4) * (3**x)  for x in range(-2, 3)]
+            self.hyper_lamb = [(10**4) * (3**x) for x in range(-2, 3)]
         else:
             self.hyper_lamb = lamb
         self.beta = None
@@ -102,4 +89,4 @@ class Ridge(Solution):
         mat = self.lamb / (self.size ** 0.5) * \
               torch.eye(x.shape[1], device=dataset.x.device)
         self.beta = ((x_t @ x) + mat).inverse() @ x_t @ dataset.y
-        self.loss = torch.nn.MSELoss()(self(dataset), dataset.y).tolist()
+        self.loss = self.criterion(self(dataset), dataset.y).tolist()

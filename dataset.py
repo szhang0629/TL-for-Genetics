@@ -2,7 +2,7 @@ import os
 
 import numpy as np
 import pandas as pd
-from sklearn.impute import SimpleImputer
+# from sklearn.impute import SimpleImputer
 
 from data import Data
 
@@ -24,7 +24,7 @@ class Data1(Data):
                 race_index = (yz.loc[:, 'eth_org'] == race)
             yz = yz.loc[race_index, :]
         if target is None:
-            x = x.loc[:, x.isnull().sum() / x.shape[0] < 0.01]
+            # x = x.loc[:, x.isnull().sum() / x.shape[0] < 0.01]
             # imp_mean = SimpleImputer(missing_values=np.nan, strategy='mean')
             # imp_mean.fit(x)
             # x = pd.DataFrame(data=imp_mean.transform(x.values),
